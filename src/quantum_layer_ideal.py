@@ -1,4 +1,5 @@
 import numpy as np
+import qiskit.circuit
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
 
 def RBS(theta): # RBS gate with parameter t
@@ -15,7 +16,7 @@ def RBS(theta): # RBS gate with parameter t
 
     rbs.cz(c_qubit, t_qubit)
     rbs.h(c_qubit)
-    rbs.h(t_qubit) 
+    rbs.h(t_qubit)
     return rbs.to_gate()
 
 def data_loader(data_array):

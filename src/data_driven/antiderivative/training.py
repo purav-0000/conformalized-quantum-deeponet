@@ -5,7 +5,8 @@ import os
 import random
 import secrets
 from dataclasses import dataclass, field
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Tuple
 
 import deepxde as dde
 import numpy as np
@@ -13,7 +14,8 @@ import torch
 import yaml
 
 from src.classical_orthogonal_deeponet import OrthoONetCartesianProd
-from src.utils.common import apply_overrides, load_dataset, load_calibration_dataset, normalize_bounds, transform_input
+from src.utils.common import apply_overrides
+from src.utils.data_handling import DataHandler
 
 
 # --- Config and logging ---
@@ -55,114 +57,135 @@ def set_seeds(seed: int):
     random.seed(seed)
 
 
-# --- Training function ---
-def train_model(
-    config: Config,
-    data_dir: str,
-    model_dir: str,
-    seed: int,
-    lr: float,
-    iterations: int,
-    bootstrap: bool = False
-):
-    """Train a single DeepONet model."""
-    set_seeds(seed)
+# --- Training Workflow Class ---
 
-    # Load dataset
-    x_train_full, y_train_full, x_val, y_val, x_test, y_test, _ = load_dataset(data_dir)
-    x_cal, y_cal = load_calibration_dataset(data_dir)
+class TrainingRunner:
+    """Encapsulates the entire model training workflow."""
 
-    # Normalize input bounds for both branch and trunk inputs
-    bounds = normalize_bounds(x_train_full, x_test, x_val, x_cal)
+    def __init__(self, config: Config):
+        self.config = config
+        self.data_handler = DataHandler(config.data_dir)
 
-    # Optional bootstrapping of training samples
-    if bootstrap:
-        n_train = y_train_full.shape[0]
-        indices = np.random.choice(n_train, n_train, replace=True)
-        x_train = (x_train_full[0][indices], x_train_full[1])
-        y_train = y_train_full[indices]
-    else:
-        x_train = x_train_full
-        y_train = y_train_full
+        # NEW: Centralized path management
+        if self.config.ensemble > 0:
+            name = self.config.ensemble_name or f"ensemble_seed{self.config.seed}"
+            self.base_output_dir = Path("models", "ensembles", name)
+        else:
+            name = self.config.model_name or f"model_seed{self.config.seed}"
+            self.base_output_dir = Path("models", name)
+
+        logging.info(f"Base output directory set to: {self.base_output_dir}")
+        self.base_output_dir.mkdir(parents=True, exist_ok=True)
+
+    def run(self):
+        """Main execution method to start the training process."""
+        if self.config.ensemble > 0:
+            self._run_ensemble()
+        else:
+            self._run_single_model()
+        logging.info("Training complete.")
+
+    def _run_single_model(self):
+        """Trains a single model instance."""
+        logging.info(f"Training single model (seed={self.config.seed})...")
+        self._train_one_instance(self.base_output_dir, self.config.seed)
+
+    def _run_ensemble(self):
+        """Trains an ensemble of models, each with a different seed."""
+        base_seed = self.config.seed
+        for i in range(self.config.ensemble):
+            # Use the base seed for the first model, then random seeds for the rest
+            seed_i = base_seed if i == 0 else secrets.randbits(32)
+            model_dir = self.base_output_dir / f"model{i}"
+
+            logging.info(f"Training ensemble model {i + 1}/{self.config.ensemble} (seed={seed_i})...")
+            self._train_one_instance(model_dir, seed_i)
+
+    def _train_one_instance(self, model_dir: Path, seed: int):
+        """
+        The core logic to train and save a single model instance.        """
+        set_seeds(seed)
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        # Use pre-loaded and pre-normalized data from the handler
+        x_train_full, y_train_full = self.data_handler.x_train, self.data_handler.y_train
+
+        # Optional bootstrapping
+        if self.config.bootstrap:
+            n_train = y_train_full.shape[0]
+            indices = np.random.choice(n_train, n_train, replace=True)
+            x_train = (x_train_full[0][indices], x_train_full[1])  # Fixed trunk bootstrapping
+            y_train = y_train_full[indices]
+        else:
+            x_train, y_train = x_train_full, y_train_full
+
+        # DataHandler object transformers data, so not transformation is required
+        x_test, y_test = self.data_handler.x_test, self.data_handler.y_test
+
+        model = self._setup_dde_model(x_train, y_train, x_test, y_test)
+
+        # Train
+        losshistory, _ = model.train(iterations=self.config.iterations, disregard_previous_best=True)
+
+        # Save all results
+        self._save_artifacts(model, losshistory, model_dir, seed)
+
+    def _setup_dde_model(self, x_train: Tuple, y_train: np.ndarray, x_test: Tuple, y_test: np.ndarray) -> dde.Model:
+        """NEW: Encapsulates the boilerplate for setting up the DeepXDE model."""
+        data = dde.data.TripleCartesianProd(X_train=x_train, y_train=y_train, X_test=x_test, y_test=y_test)
+
+        m = x_train[0].shape[1]
+        dim_x = x_train[1].shape[1]
+
+        layer_sizes_branch = [m, self.config.branch_hidden, self.config.shared_output]
+        layer_sizes_trunk = [dim_x, self.config.trunk_hidden, self.config.shared_output]
+
+        net = OrthoONetCartesianProd(
+            layer_sizes_branch=layer_sizes_branch,
+            layer_sizes_trunk=layer_sizes_trunk,
+            activation="silu"
+        )
+        model = dde.Model(data, net)
+        model.compile("adam", lr=self.config.lr, metrics=["mean l2 relative error"])
+        return model
+
+    def _save_artifacts(self, model: dde.Model, losshistory, model_dir: Path, seed: int):
+        """NEW: Encapsulates all file-saving operations."""
+        # Save DDE-specific files
+        model.save(str(model_dir / "model_checkpoint"))
+        dde.utils.external.save_loss_history(losshistory, str(model_dir / "loss_history.txt"))
+
+        # Save weights as plain text for easy loading in simulation
+        for name, param in model.net.named_parameters():
+            np.savetxt(model_dir / f"{name}.txt", param.cpu().detach().numpy())
+
+        # Save the seed and config for reproducibility
+        (model_dir / "seed.txt").write_text(str(seed))
+        with open(model_dir / "config_used.json", "w") as f:
+            json.dump(self.config.__dict__, f, indent=4)
+        logging.info(f"Model and artifacts saved to {model_dir}")
 
 
-    # Normalize data to [-1, 1]
-    x_train = (
-        transform_input(x_train[0], bounds["branch_min"], bounds["branch_max"]),
-        transform_input(x_train[1], bounds["trunk_min"], bounds["trunk_max"])
-    )
-    x_test = (
-        transform_input(x_test[0], bounds["branch_min"], bounds["branch_max"]),
-        transform_input(x_test[1], bounds["trunk_min"], bounds["trunk_max"])
-    )
+# --- Main Entry Point ---
 
-    # Prepare data loader
-    data = dde.data.TripleCartesianProd(X_train=x_train, y_train=y_train, X_test=x_test, y_test=y_test)
-
-    # Model definition
-    m = x_train[0].shape[1]
-    dim_x = x_train[1].shape[1]
-    layer_sizes_branch = [m, config.branch_hidden, config.shared_output]
-    layer_sizes_trunk = [dim_x, config.trunk_hidden, config.shared_output]
-
-    net = OrthoONetCartesianProd(
-        layer_sizes_branch=layer_sizes_branch,
-        layer_sizes_trunk=layer_sizes_trunk,
-        activation="silu"
-    )
-    model = dde.Model(data, net)
-    model.compile("adam", lr=lr, metrics=["mean l2 relative error"])
-
-    # Train
-    losshistory, train_state = model.train(iterations=iterations, disregard_previous_best=True)
-
-    # Save outputs
-    os.makedirs(model_dir, exist_ok=True)
-    model.save(os.path.join(model_dir, "model_checkpoint"))
-    dde.utils.external.save_loss_history(losshistory, os.path.join(model_dir, "loss_history.txt"))
-
-    # Save weights
-    for name, param in model.net.named_parameters():
-        np.savetxt(os.path.join(model_dir, f"{name}.txt"), param.cpu().detach().numpy())
-
-    # Save training config and seed
-    with open(os.path.join(model_dir, "seed.txt"), "w") as f:
-        f.write(str(seed))
-    with open(os.path.join(model_dir, "config_used.json"), "w") as f:
-        json.dump(config.__dict__, f, indent=2)
-
-
-# --- Main entry point ---
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="default", help="Config file name")
-    parser.add_argument("--override", nargs='*', help="Optional overrides in key=value format")
+    """Parses arguments and starts the training runner."""
+    parser = argparse.ArgumentParser(description="DeepONet Training Script")
+    parser.add_argument("--config", type=str, default="default", help="Config file name in configs/training")
+    parser.add_argument("--override", nargs='*', help="Overrides in key=value format (e.g., lr=0.005 iterations=50000)")
     args = parser.parse_args()
-    args.config = os.path.join("configs/training", args.config + ".yaml")
-    config = load_config(args.config)
+
+    config_path = Path("configs/training") / f"{args.config}.yaml"
+    if not config_path.exists():
+        logging.error(f"Configuration file not found at {config_path}")
+        return
+
+    config = load_config(str(config_path))
     apply_overrides(config, args.override)
 
-    data_path = os.path.join("data", config.data_dir)
-
-    if config.ensemble > 0:
-        base_seed = config.seed
-        ensemble_name = config.ensemble_name or f"ensemble_seed{base_seed}"
-        ensemble_dir = os.path.join("models", "ensembles", ensemble_name)
-
-        for i in range(config.ensemble):
-            seed_i = base_seed if i == 0 else secrets.randbits(32)
-            model_name = f"model{i}"
-            model_dir = os.path.join(ensemble_dir, model_name)
-            logging.info(f"Training ensemble model {i+1}/{config.ensemble} (seed={seed_i})...")
-            train_model(config, data_path, model_dir, seed_i, config.lr, config.iterations, config.bootstrap)
-    else:
-        model_name = config.model_name or f"seed{config.seed}"
-        model_dir = os.path.join("models", model_name)
-        logging.info(f"Training single model (seed={config.seed})...")
-        train_model(config, data_path, model_dir, config.seed, config.lr, config.iterations, config.bootstrap)
+    runner = TrainingRunner(config)
+    runner.run()
 
 
 if __name__ == "__main__":
     main()
-
-

@@ -1,0 +1,13 @@
+{
+    "bootstrap": false,
+    "data_dir": "data_ode_simple",
+    "ensemble": 4,
+    "ensemble_name": "overhaul",
+    "iterations": 10000,
+    "lr": 0.001,
+    "model_name": null,
+    "seed": 3885086545,
+    "branch_hidden": 10,
+    "trunk_hidden": 10,
+    "shared_output": 10
+}

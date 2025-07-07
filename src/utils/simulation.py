@@ -1,16 +1,21 @@
+# utils/simulation.py
+
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from pathlib import Path
 from qiskit import transpile
+from qiskit.providers.fake_provider import FakeGuadalupe # 16-qubit device
+from typing import Optional, Tuple
 
 from src.quantum_layer_ideal import custom_tomo_fast
-from src.utils.common import load_dataset
 
-def silu(x):
+
+def silu(x: np.ndarray) -> np.ndarray:
     return x / (1 + np.exp(-x))
 
-def load_weights(directory):
+def load_weights(directory: Path) -> dict:
     return {
         "branch_hidden0_bias": np.loadtxt(os.path.join(directory, "branch.hidden_layers.0.bias.txt")),
         "branch_hidden0_thetas": np.loadtxt(os.path.join(directory, "branch.hidden_layers.0.thetas.txt")),
@@ -21,89 +26,122 @@ def load_weights(directory):
         "trunk_output_bias": np.loadtxt(os.path.join(directory, "trunk.output_layer.bias.txt")),
         "trunk_output_weight": np.loadtxt(os.path.join(directory, "trunk.output_layer.weight.txt")),
 
-        "b": np.loadtxt(os.path.join(directory, "b.txt"))
+        "final_bias": np.loadtxt(os.path.join(directory, "b.txt"))
     }
 
 
-def evaluate_model(y_pred, y_true, verbose=False, save_dir=None, ensemble_dir=None, model_name=None):
+def evaluate_model(y_pred: np.ndarray, y_true: np.ndarray, save_dir: Path=None, verbose: bool=False):
     def save_evaluation_results(output_dir, y_pred, error, prefix=""):
         """Save evaluation outputs to disk with a timestamp."""
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
 
-        np.savetxt(os.path.join(output_dir, f"{prefix}simulation_error.txt_" + timestamp), [error])
-        np.savetxt(os.path.join(output_dir, f"{prefix}simulation_output.txt_" + timestamp), y_pred)
+        np.savetxt(os.path.join(output_dir, f"{prefix}simulation_error_" + timestamp + ".txt"), [error])
+        np.savetxt(os.path.join(output_dir, f"{prefix}simulation_output_" + timestamp + ".txt"), y_pred)
 
-    error = np.mean(np.linalg.norm(y_pred - y_true, axis=1) / np.linalg.norm(y_true, axis=1))
+    # If ensemble predictions, take the mean
+    if y_pred.ndim > 2:
+        y_pred_mean = y_pred.mean(axis=0)
+    else:
+        y_pred_mean = y_pred
+
+    error = np.mean(np.linalg.norm(y_pred_mean - y_true, axis=1) / np.linalg.norm(y_true, axis=1))
 
     if verbose:
-        print(f"Mean L2 error: {error:.6f}")
+        print(f"Mean Relative L2 Error: {error:.6f}")
 
     if save_dir:
-        save_evaluation_results(save_dir, y_pred, error)
-
-    if ensemble_dir and model_name:
-        prefix = f"simulation_{model_name}_"
-        save_evaluation_results(ensemble_dir, y_pred, error, prefix=prefix)
-
-
+        save_evaluation_results(save_dir, y_pred_mean, error)
 
     return error
 
 
-def build_circuit(x_input0, n_in, n_out, W_gate, loader_special_gate, loader_inv_gate, simulator):
-    x_input = x_input0.copy()
-    x_input += (np.abs(x_input) < 1e-7) * 1e-7
-    circ = custom_tomo_fast(n_in, n_out, x_input, W_gate, loader_special_gate, loader_inv_gate)
-    circ.save_statevector('state')
-    return transpile(circ, simulator)
+def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gate, loader_inv_gate, simulator, cost_check=False):
+    x_input_stable = x_input.copy()
+    x_input_stable[np.abs(x_input_stable) < 1e-7] += 1e-7
+
+    circuit = custom_tomo_fast(n_in, n_out, x_input_stable, W_gate, loader_gate, loader_inv_gate)
+
+    # Optional: Analyze circuit cost against a realistic backend
+    if cost_check:
+        from qiskit.providers.fake_provider import FakeGuadalupeV2
+        from qiskit.transpiler import PassManager, InstructionDurations
+        from qiskit.transpiler.passes import ASAPSchedule
+        backend = FakeGuadalupeV2()
+        t_qc = transpile(circuit, backend=backend, optimization_level=3)
+        print(f"\n--- Realistic Circuit Cost ---")
+        print(f"Depth: {t_qc.depth()}, CNOTs: {t_qc.count_ops().get('cx', 0)}, RZs: {t_qc.count_ops().get('rz', 0)}")
+        instruction_durations = backend.target.durations()
+
+        # 6. Create a PassManager with the explicit durations object
+        pm = PassManager([ASAPSchedule(instruction_durations)])
+        scheduled_qc = pm.run(t_qc)  # Use one of the transpiled circuits
+
+        # 7. Access the duration in 'dt' units
+        duration_dt = scheduled_qc.duration
+
+        if duration_dt:
+            # 8. Get the value of dt from the backend's TARGET attribute
+            dt_in_seconds = backend.target.dt
+            duration_us = duration_dt * dt_in_seconds * 1e6  # convert to microseconds
+
+            print("\n--- Realistic Circuit Cost (Duration) ---")
+            print(f"Duration in dt: {duration_dt} dt")
+            print(f"Backend dt unit: {dt_in_seconds * 1e9:.3f} ns")
+            print(f"Total Duration: {duration_us:.2f} µs")
+        else:
+            print("\nCircuit could not be scheduled.")
+        print()
+        return
+
+    circuit.save_statevector('state')
+    return transpile(circuit, simulator)
 
 
-def plot_pred(x_test, y_test, y_pred, save_path, x_test_plot, q_hat, confidence=False):
-
-    ensemble = False
-    # Check if ensemble or single model
-    if len(y_pred.shape) == 3:  # Ensemble will have 3-dimensional output (models, batch index, output)
-        ensemble = True
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(save_path, timestamp)
+def plot_pred(
+        x_test: Tuple[np.ndarray, np.ndarray],
+        y_test: np.ndarray,
+        y_pred: np.ndarray,
+        output_dir: Path,
+        x_test_plot: np.ndarray,
+        q_hat: Optional[float] = None
+):
+    is_ensemble = y_pred.ndim == 3  # Ensemble will have 3-dimensional output (models, batch index, output)
+    num_samples = 15
 
     indices = np.random.choice(len(y_test), size=15, replace=False)
-    fig, axs = plt.subplots(15, 1, figsize=(15, 50), sharex=True, sharey=True)
+    fig, axs = plt.subplots(num_samples, 1, figsize=(12, 4 * num_samples), sharex=True, sharey=True)
 
     # Select trunk inputs
-    x_trunk = x_test[1][:, 0]
+    x_trunk_coords = x_test[1][:, 0]
     for ax, idx in zip(axs, indices):
 
-        # Select input function
-        x_branch = x_test_plot[idx, :]
-        ax.plot(x_trunk, x_branch, color='orange', alpha=0.8, label="Input")
-
         y = y_test[idx]
-        ax.plot(x_trunk, y, 'r-', label="Ground Truth")
+
+        # Plot input function and ground truth
+        ax.plot(x_trunk_coords, x_test_plot[idx, :], color='orange', alpha=0.9, label="Input Function")
+        ax.plot(x_trunk_coords, y, 'r-', linewidth=2, label="Ground Truth")
 
         # Check if ensembles or single model
-        if ensemble:  # Ensemble
+        if is_ensemble:  # Ensemble
             samples = y_pred[:, idx, :]
-
-            # Confidence interval
             mean_pred = samples.mean(axis=0)
             std_pred = samples.std(axis=0)
 
-            ax.plot(x_trunk, mean_pred, 'b-', label="Prediction")
+            # Confidence interval
+            ax.plot(x_trunk_coords, mean_pred, 'b-', label="Mean Prediction")
             lower = mean_pred - q_hat * std_pred
             upper = mean_pred + q_hat * std_pred
-            ax.fill_between(x_trunk, lower, upper, color='blue', alpha=0.3, label="Conformal Interval")
-
+            ax.fill_between(x_trunk_coords, lower, upper, color='blue', alpha=0.2, label="Conformal Interval")
         else:   # Single model
-            ax.plot(x_trunk, y_pred[idx, :], 'b-', label="Prediction")
+            ax.plot(x_trunk_coords, y_pred[idx, :], 'b-', label="Prediction")
 
-        ax.set_title(f"Sample {idx}")
-        ax.grid(True)
+        ax.set_title(f"Test Sample Index: {idx}")
+        ax.grid(True, linestyle='--', alpha=0.6)
 
     axs[0].legend()
     fig.suptitle("Prediction with conformal intervals")
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-    plt.savefig(save_path)
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    plt.savefig(output_dir / f"predictions_plot_{timestamp}.png")
     plt.close()
 

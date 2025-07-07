@@ -7,3 +7,5 @@ simulator: "CPU"
 mode: "ideal"
 shots: 0
 batch_size: null
+spqc: False
+analyze_circuit_cost: False
