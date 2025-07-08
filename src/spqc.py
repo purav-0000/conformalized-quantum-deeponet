@@ -5,6 +5,18 @@ from src.quantum_layer_ideal import data_loader, RBS
 from qiskit.circuit.library import UCRYGate
 
 
+def pad_to_power_of_two(x):
+    """ Required since controlled rotations only handle angles with len(angles) = power of 2"""
+    n = x.shape[0]
+    target = 2 ** int(np.ceil(np.log2(n)))
+    pad_rows = target - n
+    if pad_rows == 0:
+        return x
+
+    # Pad with 0s which becomes identity matrix for Ry gate.
+    padding = np.zeros((pad_rows, x.shape[1]))
+    return np.vstack([x, padding])
+
 def create_spqc_circuit(
         n_in: int,
         n_out: int,
@@ -58,6 +70,8 @@ def create_spqc_circuit(
     circuit.append(loader_data_gate, input_qubits)
 
     # 3. Apply the parallelized trainable unitary (W) using UCRY gates
+    # Pad to power of 2 first
+    ensemble_thetas = pad_to_power_of_two(ensemble_thetas)
     _apply_parallel_w(circuit, n_in, n_out, ensemble_thetas, addr_qr, tomo_qr)
 
     # 4. Apply tomography components

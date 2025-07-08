@@ -106,9 +106,9 @@ def plot_pred(
         q_hat: Optional[float] = None
 ):
     is_ensemble = y_pred.ndim == 3  # Ensemble will have 3-dimensional output (models, batch index, output)
-    num_samples = 15
+    num_samples = 10
 
-    indices = np.random.choice(len(y_test), size=15, replace=False)
+    indices = np.random.choice(len(y_test), size=num_samples, replace=False)
     fig, axs = plt.subplots(num_samples, 1, figsize=(12, 4 * num_samples), sharex=True, sharey=True)
 
     # Select trunk inputs
@@ -132,6 +132,7 @@ def plot_pred(
             lower = mean_pred - q_hat * std_pred
             upper = mean_pred + q_hat * std_pred
             ax.fill_between(x_trunk_coords, lower, upper, color='blue', alpha=0.2, label="Conformal Interval")
+
         else:   # Single model
             ax.plot(x_trunk_coords, y_pred[idx, :], 'b-', label="Prediction")
 
@@ -139,7 +140,24 @@ def plot_pred(
         ax.grid(True, linestyle='--', alpha=0.6)
 
     axs[0].legend()
-    fig.suptitle("Prediction with conformal intervals")
+    error = evaluate_model(y_pred, y_test)
+
+    # Calculate coverage
+    mean_pred = y_pred.mean(axis=0)
+    std_pred = y_pred.std(axis=0)
+
+    lower = mean_pred - q_hat * std_pred
+    upper = mean_pred + q_hat * std_pred
+
+    # Element-wise boolean mask
+    in_interval = (y_test >= lower) & (y_test <= upper)
+
+    # Fraction or percentage of covered points
+    coverage = np.mean(in_interval)  # fraction in [0, 1]
+    # Optional: convert to percent
+    coverage_percent = 100 * coverage
+
+    fig.suptitle(f"Prediction with conformal intervals \n Error: {error} \n Coverage: {coverage_percent}")
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     plt.savefig(output_dir / f"predictions_plot_{timestamp}.png")
