@@ -157,7 +157,15 @@ def plot_pred(
     # Optional: convert to percent
     coverage_percent = 100 * coverage
 
-    fig.suptitle(f"Prediction with conformal intervals \n Error: {error} \n Coverage: {coverage_percent}")
+    # Average width
+    average_width = np.mean(upper - lower)
+
+    fig.suptitle(
+        f"Prediction with conformal intervals\n"
+        f"Error: {error:.6f}\n"
+        f"Coverage: {coverage_percent:.6f}\n"
+        f"Average width: {average_width:.6f}"
+    )
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     plt.savefig(output_dir / f"predictions_plot_{timestamp}.png")
