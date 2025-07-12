@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Tuple, List, Dict
 
 import numpy as np
+import qiskit.qasm2
 import torch
 import yaml
 from joblib import Parallel, delayed
@@ -358,7 +359,7 @@ class SimulationRunner:
                 # Run layers classically instead
                 trunk_outputs = [
                     self._run_classical_layer(
-                        inputs[1], inputs.shape[1], params["trunk"]["hidden0_bias"][0].shape[0],
+                        inputs[1], inputs[1].shape[1], params["trunk"]["hidden0_bias"][0].shape[0],
                         params["trunk"]["hidden0_bias"][i], params["trunk"]["output_weight"][i], params["trunk"]["output_bias"][i],
                         params["trunk"]["hidden0_thetas"][i], is_trunk=True
                     )
@@ -445,13 +446,41 @@ class SimulationRunner:
 
         # Optional: Analyze circuit cost against a realistic backend
         if cost_check:
-            from qiskit.providers.fake_provider import FakeGuadalupeV2
+            import pyzx as zx
+            from qiskit import QuantumCircuit
+            from qiskit.qasm2 import dump
+            from qiskit.providers.fake_provider import FakeToronto
             from qiskit.transpiler import PassManager, InstructionDurations
             from qiskit.transpiler.passes import ASAPSchedule
-            backend = FakeGuadalupeV2()
-            t_qc = transpile(circ, backend=backend, optimization_level=3)
+            backend = FakeToronto()
+
+            t_qc = transpile(circ, backend=backend, optimization_level=0)
+
+            with open("circuit.qasm", "w") as f:
+                dump(t_qc, f)
+
+            # pyZX stuff
+            circ = zx.Circuit.from_qasm_file('circuit.qasm')
+            # Optimize
+            g = circ.to_basic_gates().to_graph()
+            zx.simplify.full_reduce(g, quiet=True)
+            g.normalize()
+            new_circ = zx.extract_circuit(g)
+
+            # Convert directly to Qiskit QuantumCircuit without writing file
+            qasm_str = new_circ.to_qasm()
+            t_qc = QuantumCircuit.from_qasm_str(qasm_str)
+
+            t_qc = transpile(t_qc, backend=backend, optimization_level=2)
+
+            print(t_qc)
+
             print(f"\n--- Realistic Circuit Cost ---")
-            print(f"Depth: {t_qc.depth()}, CNOTs: {t_qc.count_ops().get('cx', 0)}, RZs: {t_qc.count_ops().get('rz', 0)}")
+            print(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}")
+
+            exit(1)
+
+            """
             instruction_durations = backend.target.durations()
 
             # 6. Create a PassManager with the explicit durations object
@@ -472,7 +501,9 @@ class SimulationRunner:
                 print(f"Total Duration: {duration_us:.2f} µs")
             else:
                 print("\nCircuit could not be scheduled.")
+            """
             print()
+
             return
 
         circ.save_statevector('state')

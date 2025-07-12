@@ -9,3 +9,5 @@ batch_size: null
 coverage: 0.9
 spqc: False
 analyze_circuit_cost: False
+classical_branch: False
+classical_trunk: False

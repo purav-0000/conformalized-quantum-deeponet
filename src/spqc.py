@@ -223,8 +223,6 @@ def SPQC_circuit(n_in, n_out, thetas, data_array, loader_inv_gate, loader_specia
 
     thetas = np.array(thetas)
     for i, q_start_index in enumerate(q_start_indices):
-
-
         theta_slice = thetas[:, theta_start_index:theta_start_index+q_slice_sizes[i]//2]
         # import pdb; pdb.set_trace()
         for j in range(theta_slice.shape[1]):

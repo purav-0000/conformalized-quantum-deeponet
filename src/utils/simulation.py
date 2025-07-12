@@ -63,15 +63,43 @@ def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gat
 
     # Optional: Analyze circuit cost against a realistic backend
     if cost_check:
-        from qiskit.providers.fake_provider import FakeGuadalupeV2
+        import pyzx as zx
+        from qiskit import QuantumCircuit
+        from qiskit.qasm2 import dump
+        from qiskit.providers.fake_provider import FakeToronto
         from qiskit.transpiler import PassManager, InstructionDurations
         from qiskit.transpiler.passes import ASAPSchedule
-        backend = FakeGuadalupeV2()
-        t_qc = transpile(circuit, backend=backend, optimization_level=3)
+        backend = FakeToronto()
+
+        t_qc = transpile(circuit, backend=backend, optimization_level=0)
+
+        with open("circuit.qasm", "w") as f:
+            dump(t_qc, f)
+
+        # pyZX stuff
+        circ = zx.Circuit.from_qasm_file('circuit.qasm')
+        # Optimize
+        g = circ.to_basic_gates().to_graph()
+        zx.simplify.full_reduce(g, quiet=True)
+        g.normalize()
+        new_circ = zx.extract_circuit(g)
+
+        # Convert directly to Qiskit QuantumCircuit without writing file
+        qasm_str = new_circ.to_qasm()
+        t_qc = QuantumCircuit.from_qasm_str(qasm_str)
+
+        t_qc = transpile(t_qc, backend=backend, optimization_level=2)
+
+        print(t_qc)
+
         print(f"\n--- Realistic Circuit Cost ---")
-        print(f"Depth: {t_qc.depth()}, CNOTs: {t_qc.count_ops().get('cx', 0)}, RZs: {t_qc.count_ops().get('rz', 0)}")
+        print(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}")
+
+        exit(1)
+        """
         instruction_durations = backend.target.durations()
 
+        
         # 6. Create a PassManager with the explicit durations object
         pm = PassManager([ASAPSchedule(instruction_durations)])
         scheduled_qc = pm.run(t_qc)  # Use one of the transpiled circuits
@@ -90,6 +118,7 @@ def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gat
             print(f"Total Duration: {duration_us:.2f} µs")
         else:
             print("\nCircuit could not be scheduled.")
+        """
         print()
         return
 
