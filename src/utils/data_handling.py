@@ -11,7 +11,9 @@ def transform_input(x, min_val, max_val):
     x = 2 * (x - min_val) / (max_val - min_val) - 1
     x = x / np.sqrt(d)
     x_d1 = np.sqrt(1 - np.sum(x**2, axis=1, keepdims=True))
-    return np.concatenate((x, x_d1), axis=1)
+
+    # Ensure float32, perhaps np.sqrt(d) is float64
+    return np.concatenate((x, x_d1), axis=1, dtype=np.float32)
 
 
 def normalize_bounds(x_train, x_test, x_val, x_cal):
