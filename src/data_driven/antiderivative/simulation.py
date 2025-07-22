@@ -7,6 +7,7 @@ import random
 import secrets
 from dataclasses import dataclass, field
 from typing import Optional, Tuple, List, Dict
+import re
 
 import numpy as np
 import qiskit.qasm2
@@ -142,32 +143,67 @@ class SimulationRunner:
     def get_layer_params(self, prefix: str, inputs, weights):
         x = inputs[0] if prefix == BRANCH_PREFIX else inputs[1]
         n_in = x.shape[1]
-        n_out = weights[f"{prefix}_hidden0_bias"].shape[0]
+        n_out = weights[f"{prefix}_hidden_bias"].shape[0]
         return (
             x, n_in, n_out,
-            weights[f"{prefix}_hidden0_bias"],
+            weights[f"{prefix}_hidden_bias"],
             weights[f"{prefix}_output_weight"],
             weights[f"{prefix}_output_bias"],
-            weights[f"{prefix}_hidden0_thetas"]
+            weights[f"{prefix}_hidden_thetas"]
         )
 
     def _run_model(self, model_path: Path, inputs: Tuple[np.ndarray, np.ndarray]) -> np.ndarray:
         """Runs the full forward pass of a single DeepONet model."""
-        weights = load_weights(model_path)
 
+        # Regex pattern
+        pattern = re.compile(r'\.hidden_layers\.(\d+)\..*\.txt$')
+
+        # Collect layer numbers
+        layer_numbers = []
+
+        # Match pattern
+        for file in model_path.iterdir():
+            if file.is_file():
+                match = pattern.search(file.name)
+                if match:
+                    layer_numbers.append(int(match.group(1)))
+
+        # Find the last layer
+        last_layer_num = max(layer_numbers)
+
+        # Initialize
+        branch_outputs, trunk_outputs, weights = None, None, None
+        last_layer = False
+
+        # Run classical layer if desired
         if self.config.classical_branch:
-            branch_outputs = self._run_classical_layer(*self.get_layer_params(BRANCH_PREFIX, inputs, weights), is_trunk=False)
-        else:
-            branch_outputs = self._run_quantum_layer(*self.get_layer_params(BRANCH_PREFIX, inputs, weights), is_trunk=False)
-
+            branch_outputs = self._run_classical_layer(inputs[0], [load_weights(model_path, layer=i) for i in range(last_layer_num + 1)],
+                                                       is_trunk=False)
         if self.config.classical_trunk:
-            trunk_outputs = self._run_classical_layer(*self.get_layer_params(TRUNK_PREFIX, inputs, weights), is_trunk=True)
-        else:
-            trunk_outputs = self._run_quantum_layer(*self.get_layer_params(TRUNK_PREFIX, inputs, weights), is_trunk=True)
+            trunk_outputs = self._run_classical_layer(inputs[1], [load_weights(model_path, layer=i) for i in range(last_layer_num + 1)],
+                                                       is_trunk=True)
+
+        # Run quantum layer
+        for i in range(last_layer_num + 1):
+            weights = load_weights(model_path, layer=i)
+
+            if i == last_layer:
+                last_layer = True
+
+            if not self.config.classical_branch:
+                branch_outputs = self._run_quantum_layer(*self.get_layer_params(BRANCH_PREFIX, inputs, weights),
+                                                         last_layer=last_layer, is_trunk=False)
+
+            if not self.config.classical_trunk:
+                trunk_outputs = self._run_quantum_layer(*self.get_layer_params(TRUNK_PREFIX, inputs, weights),
+                                                        last_layer=last_layer, is_trunk=True)
+
+            # Prepare for next layer
+            inputs = (branch_outputs, trunk_outputs)
 
         return np.einsum('bi,ni->bn', branch_outputs, trunk_outputs) + weights["final_bias"]
 
-    def _run_quantum_layer(self, inputs, n_in, n_out, bias, weight, output_bias, thetas, is_trunk: bool):
+    def _run_quantum_layer(self, inputs, n_in, n_out, bias, weight, output_bias, thetas, last_layer: bool, is_trunk: bool):
         """Simulates the execution of one quantum layer (branch or trunk)."""
         # Precompute gates
         sqrt_norm = np.sqrt(max(n_in, n_out))
@@ -197,7 +233,7 @@ class SimulationRunner:
 
             # Parallelization results in massive overhead, so removed it
             batch_outputs = [
-                self._process_quantum_output(j, results, n_in, n_out, bias, weight, output_bias, is_trunk)
+                self._process_quantum_output(j, results, n_in, n_out, bias, weight, output_bias, last_layer, is_trunk)
                 for j in range(len(batch))
             ]
             all_outputs.extend(batch_outputs)
@@ -205,7 +241,7 @@ class SimulationRunner:
         return np.array(all_outputs)
 
     def _process_quantum_output(self, idx, results, n_in, n_out, hidden0_bias, output_weight, output_bias,
-                                is_trunk: bool):
+                                last_layer: bool, is_trunk: bool):
         """Processes the raw statevector from a single circuit run."""
         statevector = np.real(results.data(idx)['state'].data)
 
@@ -230,23 +266,38 @@ class SimulationRunner:
             result1 = state_probs[int(pos1_str, 2)]
             output.append(np.sqrt(max(n_in, n_out)) * (result0 - result1))
 
-        # Apply classical post-processing layers
         output = silu(np.array(output) + hidden0_bias)
-        output = np.dot(output, output_weight.T) + output_bias
+        if last_layer:
+            # Apply classical post-processing layers
+            output = np.dot(output, output_weight.T) + output_bias
 
-        return silu(output) if is_trunk else output
+            if is_trunk:
+                output = silu(output)
+
+        return output
 
 
-    def _run_classical_layer(self, inputs, n_in, n_out, bias, weight, output_bias, thetas, is_trunk: bool):
+    def _run_classical_layer(self, inputs, weights, is_trunk: bool):
+
+        prefix = BRANCH_PREFIX if not is_trunk else TRUNK_PREFIX
 
         # Setup one layer OrthoNN
-        net = OrthoNN([n_in, n_out, output_bias.shape[0]], activation='silu')
+        layers = [inputs.shape[1]]
+        for i in range(len(weights)):
+            layers.append(weights[i][f"{prefix}_hidden_bias"].shape[0])
 
-        net.hidden_layers[0].thetas.data = torch.from_numpy(thetas).float()
-        net.hidden_layers[0].bias.data = torch.from_numpy(bias).float()
+        # Doesn't matter which layer you get it from, -1 is arbitrary
+        layers.append(weights[-1][f"{prefix}_output_bias"].shape[0])
 
-        net.output_layer.weight.data = torch.from_numpy(weight).float()
-        net.output_layer.bias.data = torch.from_numpy(output_bias).float()
+        net = OrthoNN(layers, activation='silu')
+
+        for i in range(len(weights)):
+            net.hidden_layers[i].thetas.data = torch.from_numpy(weights[i][f"{prefix}_hidden_thetas"]).float()
+            net.hidden_layers[i].bias.data = torch.from_numpy(weights[i][f"{prefix}_hidden_bias"]).float()
+
+        # Again, layer index does not matter
+        net.output_layer.weight.data = torch.from_numpy(weights[-1][f"{prefix}_output_weight"]).float()
+        net.output_layer.bias.data = torch.from_numpy(weights[-1][f"{prefix}_output_bias"]).float()
 
         output = net(torch.from_numpy(inputs).float()).cpu().detach().numpy()
         return silu(output) if is_trunk else output
@@ -293,20 +344,20 @@ class SimulationRunner:
 
 
     # SPQC stuffs
-    def _load_ensemble_parameters(self, model_dirs: List[Path]) -> Dict[str, Dict]:
+    def _load_ensemble_parameters(self, model_dirs: List[Path], layer: int) -> Dict[str, Dict]:
         """Loads and aggregates parameters from all models in an ensemble."""
-        all_params = [load_weights(m) for m in model_dirs]
+        all_params = [load_weights(m, layer=layer) for m in model_dirs]
 
         aggregated = {
             "branch": {
-                "hidden0_bias": np.array([p["branch_hidden0_bias"] for p in all_params]),
-                "hidden0_thetas": np.array([p["branch_hidden0_thetas"] for p in all_params]),
+                "hidden_bias": np.array([p["branch_hidden_bias"] for p in all_params]),
+                "hidden_thetas": np.array([p["branch_hidden_thetas"] for p in all_params]),
                 "output_bias": np.array([p["branch_output_bias"] for p in all_params]),
                 "output_weight": np.array([p["branch_output_weight"] for p in all_params]),
             },
             "trunk": {
-                "hidden0_bias": np.array([p["trunk_hidden0_bias"] for p in all_params]),
-                "hidden0_thetas": np.array([p["trunk_hidden0_thetas"] for p in all_params]),
+                "hidden_bias": np.array([p["trunk_hidden_bias"] for p in all_params]),
+                "hidden_thetas": np.array([p["trunk_hidden_thetas"] for p in all_params]),
                 "output_bias": np.array([p["trunk_output_bias"] for p in all_params]),
                 "output_weight": np.array([p["trunk_output_weight"] for p in all_params]),
             },
@@ -320,64 +371,109 @@ class SimulationRunner:
         ensemble_dir = Path("models", "ensembles", self.config.ensemble)
         model_dirs = [d for d in ensemble_dir.iterdir() if d.is_dir()]
 
-        print(f"Loading parameters for {len(model_dirs)} models from {ensemble_dir}")
-        params = self._load_ensemble_parameters(model_dirs)
+        # Regex pattern
+        pattern = re.compile(r'\.hidden_layers\.(\d+)\..*\.txt$')
 
-        def execute_spqc(data: str):
+        # Select the first model to figure out number of layers (arbitray)
+        model_path = Path(model_dirs[0])
+
+        # Collect layer numbers
+        layer_numbers = []
+
+        # Match pattern
+        for file in model_path.iterdir():
+            if file.is_file():
+                match = pattern.search(file.name)
+                if match:
+                    layer_numbers.append(int(match.group(1)))
+
+        # Find the last layer
+        last_layer_num = max(layer_numbers)
+
+
+        print(f"Loading parameters for {len(model_dirs)} models from {ensemble_dir}")
+
+
+        def execute_spqc(data: str, last_layer_num: int):
 
             inputs = self.data_handler.x_test if data == "test" else self.data_handler.x_cal
 
-            # Run branch and trunk layers in SPQC mode
-            if self.config.classical_branch:
-
-                # Run layers classically instead
-                branch_outputs = [
-                    self._run_classical_layer(
-                        inputs[0], inputs[0].shape[1], params["branch"]["hidden0_bias"][0].shape[0],
-                        params["branch"]["hidden0_bias"][i], params["branch"]["output_weight"][i], params["branch"]["output_bias"][i],
-                        params["branch"]["hidden0_thetas"][i], is_trunk=False
-                    )
-                    for i in range(len(model_dirs))
-                ]
-                branch_outputs = np.array(branch_outputs)
-            else:
-                branch_outputs = self._run_spqc_quantum_layer(
-                    inputs=inputs[0],
-                    n_in=inputs[0].shape[1],
-                    n_out=params["branch"]["hidden0_bias"][0].shape[0],
-                    # Select an arbitray model's hidden0_bias to calculate size of n_out
-                    ensemble_params=params["branch"],
-                    is_trunk=False
+            """
+            # Run layers classically instead
+            branch_outputs = [
+                self._run_classical_layer(
+                    inputs[0], inputs[0].shape[1], params["branch"]["hidden0_bias"][0].shape[0],
+                    params["branch"]["hidden0_bias"][i], params["branch"]["output_weight"][i], params["branch"]["output_bias"][i],
+                    params["branch"]["hidden0_thetas"][i], is_trunk=False
                 )
-
-                # Output shape from spqc_layer: (num_inputs, num_models, n_out)
-                # We need to rearrange to (num_models, num_inputs, n_out)
-                branch_outputs = np.transpose(branch_outputs, (1, 0, 2))
-
-            if self.config.classical_trunk:
-
-                # Run layers classically instead
-                trunk_outputs = [
-                    self._run_classical_layer(
-                        inputs[1], inputs[1].shape[1], params["trunk"]["hidden0_bias"][0].shape[0],
-                        params["trunk"]["hidden0_bias"][i], params["trunk"]["output_weight"][i], params["trunk"]["output_bias"][i],
-                        params["trunk"]["hidden0_thetas"][i], is_trunk=True
-                    )
-                    for i in range(len(model_dirs))
-                ]
-                trunk_outputs = np.array(trunk_outputs)
-            else:
-                trunk_outputs = self._run_spqc_quantum_layer(
-                    inputs=inputs[1],
-                    n_in=inputs[1].shape[1],
-                    n_out=params["trunk"]["hidden0_bias"][0].shape[0],
-                    ensemble_params=params["trunk"],
-                    is_trunk=True
+                for i in range(len(model_dirs))
+            ]
+            branch_outputs = np.array(branch_outputs)
+            
+            # Run layers classically instead
+            trunk_outputs = [
+                self._run_classical_layer(
+                    inputs[1], inputs[1].shape[1], params["trunk"]["hidden0_bias"][0].shape[0],
+                    params["trunk"]["hidden0_bias"][i], params["trunk"]["output_weight"][i], params["trunk"]["output_bias"][i],
+                    params["trunk"]["hidden0_thetas"][i], is_trunk=True
                 )
+                for i in range(len(model_dirs))
+            ]
+            trunk_outputs = np.array(trunk_outputs)
+            """
 
-                # Output shape from spqc_layer: (num_inputs, num_models, n_out)
-                # We need to rearrange to (num_models, num_inputs, n_out)
-                trunk_outputs = np.transpose(trunk_outputs, (1, 0, 2))
+            # Initialize
+            branch_outputs, trunk_outputs, params = None, None, None
+            last_layer = False
+            for i in range(last_layer_num + 1):
+
+                if i == last_layer_num:
+                    last_layer = True
+
+                params = self._load_ensemble_parameters(model_dirs, layer=i)
+
+                # Run branch and trunk layers in SPQC mode
+                if not self.config.classical_branch:
+                    branch_outputs = self._run_spqc_quantum_layer(
+                        inputs=inputs[0],
+                        n_in=inputs[0].shape[1],
+                        n_out=params["branch"]["hidden_bias"][0].shape[0],
+                        # Select an arbitray model's hidden0_bias to calculate size of n_out
+                        ensemble_params=params["branch"],
+                        last_layer=last_layer,
+                        is_trunk=False
+                    )
+
+                    # Output shape from spqc_layer: (num_inputs, num_models, n_out)
+                    # We need to rearrange to (num_models, num_inputs, n_out)
+                    branch_outputs = np.transpose(branch_outputs, (1, 0, 2))
+
+                    # Collapse if not last
+                    if i != last_layer_num:
+                        branch_outputs = np.mean(branch_outputs, axis=0)
+
+
+                if not self.config.classical_trunk:
+                    trunk_outputs = self._run_spqc_quantum_layer(
+                        inputs=inputs[1],
+                        n_in=inputs[1].shape[1],
+                        n_out=params["trunk"]["hidden_bias"][0].shape[0],
+                        ensemble_params=params["trunk"],
+                        last_layer=last_layer,
+                        is_trunk=True
+                    )
+
+                    # Output shape from spqc_layer: (num_inputs, num_models, n_out)
+                    # We need to rearrange to (num_models, num_inputs, n_out)
+                    trunk_outputs = np.transpose(trunk_outputs, (1, 0, 2))
+
+                    # Collapse if not last
+                    if i != last_layer_num:
+                        trunk_outputs = np.mean(trunk_outputs, axis=0)
+
+                # Set up for next iteration
+                inputs = (branch_outputs, trunk_outputs)
+
 
             final_preds = []
             for i in range(len(model_dirs)):
@@ -386,14 +482,14 @@ class SimulationRunner:
 
             return np.array(final_preds)
 
-        cal_outputs = execute_spqc(data="calibration")
+        cal_outputs = execute_spqc(data="calibration", last_layer_num=last_layer_num)
 
         scores = np.abs(self.data_handler.y_cal - cal_outputs.mean(axis=0)) / cal_outputs.std(axis=0)
         q_hat = np.quantile(scores, self.config.coverage)
         print(f"Conformal quantile q_hat at {self.config.coverage * 100}% coverage: {q_hat:.4f}")
 
         # Evaluate on test set
-        test_outputs = execute_spqc(data="test")
+        test_outputs = execute_spqc(data="test", last_layer_num=last_layer_num)
         test_outputs = np.array(test_outputs)
 
         evaluate_model(test_outputs, self.data_handler.y_test, self.output_dir, verbose=True)
@@ -402,7 +498,7 @@ class SimulationRunner:
             self.output_dir, self.data_handler.x_test_plot, q_hat=q_hat
         )
 
-    def _run_spqc_quantum_layer(self, inputs, n_in, n_out, ensemble_params, is_trunk):
+    def _run_spqc_quantum_layer(self, inputs, n_in, n_out, ensemble_params, last_layer, is_trunk):
         """Runs a quantum layer for all models in parallel using SPQC."""
         # Precompute gates that are static across all inputs
         sqrt_norm = np.sqrt(max(n_in, n_out))
@@ -420,7 +516,7 @@ class SimulationRunner:
         # Circuit construction is now per-input, as it depends on the data_array
         circuits = Parallel(n_jobs=self.config.n_jobs)(
             delayed(self._build_spqc_circuit)(
-                x, n_in, n_out, ensemble_params['hidden0_thetas'], loader_gate, loader_inv_gate
+                x, n_in, n_out, ensemble_params['hidden_thetas'], loader_gate, loader_inv_gate
             )
             for x in tqdm(inputs, desc=f"Building SPQC Circuits ({'Trunk' if is_trunk else 'Branch'})")
         )
@@ -428,7 +524,7 @@ class SimulationRunner:
         results = self.simulator.run(circuits, shots=1).result()
 
         batch_outputs = [
-            self._process_spqc_output(j, results, n_in, n_out, ensemble_params, is_trunk)
+            self._process_spqc_output(j, results, n_in, n_out, ensemble_params, last_layer, is_trunk)
             for j in tqdm(range(len(inputs)), desc="Processing SPQC Results")
         ]
 
@@ -449,7 +545,7 @@ class SimulationRunner:
             import pyzx as zx
             from qiskit import QuantumCircuit
             from qiskit.qasm2 import dump
-            from qiskit.providers.fake_provider import FakeToronto
+            from qiskit_ibm_runtime.fake_provider import FakeToronto
             from qiskit.transpiler import PassManager, InstructionDurations
             from qiskit.transpiler.passes import ASAPSchedule
             backend = FakeToronto()
@@ -510,7 +606,7 @@ class SimulationRunner:
         return transpile(circ, self.simulator)
 
 
-    def _process_spqc_output(self, idx, results, n_in, n_out, params, is_trunk):
+    def _process_spqc_output(self, idx, results, n_in, n_out, params, last_layer, is_trunk):
         """Processes the combined statevector from an SPQC circuit run."""
         statevector = np.real(results.data(idx)['state'].data)
 
@@ -521,7 +617,7 @@ class SimulationRunner:
         else:  # ideal mode
             state_probs = statevector ** 2
 
-        num_models = len(params['hidden0_bias'])
+        num_models = len(params['hidden_bias'])
         all_outputs = np.zeros((num_models, n_out))
         addr_format_bits = int(np.ceil(np.log2(num_models))) if num_models > 1 else 0
 
@@ -549,11 +645,14 @@ class SimulationRunner:
             # The SPQC output is an expectation value; scaling by num_models approximates the sum
             # that would have occurred from the address qubit superposition.
             output_i = all_outputs[i] * num_models
-            output_i = silu(output_i + params['hidden0_bias'][i])
-            output_i = np.dot(output_i, params['output_weight'][i].T) + params['output_bias'][i]
+            output_i = silu(output_i + params['hidden_bias'][i])
 
             # Different variable called ret_val to account for shape mismatches
-            ret_val.append(silu(output_i) if is_trunk else output_i)
+            if last_layer:
+                output_i = np.dot(output_i, params['output_weight'][i].T) + params['output_bias'][i]
+                ret_val.append(silu(output_i) if is_trunk else output_i)
+            else:
+                ret_val.append(output_i)
 
         return np.array(ret_val)
 

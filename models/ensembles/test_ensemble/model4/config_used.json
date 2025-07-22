@@ -1,0 +1,13 @@
+{
+    "bootstrap": false,
+    "data_dir": "data_ode_simple",
+    "ensemble": 5,
+    "ensemble_name": "test_ensemble",
+    "iterations": 5000,
+    "lr": 0.01,
+    "model_name": null,
+    "seed": 3445985898,
+    "branch_hidden": 10,
+    "trunk_hidden": 10,
+    "shared_output": 10
+}

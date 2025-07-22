@@ -6,7 +6,6 @@ import numpy as np
 import os
 from pathlib import Path
 from qiskit import transpile
-from qiskit.providers.fake_provider import FakeGuadalupe # 16-qubit device
 from typing import Optional, Tuple
 
 from src.quantum_layer_ideal import custom_tomo_fast
@@ -15,16 +14,19 @@ from src.quantum_layer_ideal import custom_tomo_fast
 def silu(x: np.ndarray) -> np.ndarray:
     return x / (1 + np.exp(-x))
 
-def load_weights(directory: Path) -> dict:
+def load_weights(directory: Path, layer) -> dict:
+
+    weights = {}
+
     return {
-        "branch_hidden0_bias": np.loadtxt(os.path.join(directory, "branch.hidden_layers.0.bias.txt")),
-        "branch_hidden0_thetas": np.loadtxt(os.path.join(directory, "branch.hidden_layers.0.thetas.txt")),
-        "branch_output_bias": np.loadtxt(os.path.join(directory, "branch.output_layer.bias.txt")),
-        "branch_output_weight": np.loadtxt(os.path.join(directory, "branch.output_layer.weight.txt")),
-        "trunk_hidden0_bias": np.loadtxt(os.path.join(directory, "trunk.hidden_layers.0.bias.txt")),
-        "trunk_hidden0_thetas": np.loadtxt(os.path.join(directory, "trunk.hidden_layers.0.thetas.txt")),
-        "trunk_output_bias": np.loadtxt(os.path.join(directory, "trunk.output_layer.bias.txt")),
-        "trunk_output_weight": np.loadtxt(os.path.join(directory, "trunk.output_layer.weight.txt")),
+        "branch_hidden_bias": np.loadtxt(os.path.join(directory, f"branch.hidden_layers.{layer}.bias.txt")),
+        "branch_hidden_thetas": np.loadtxt(os.path.join(directory, f"branch.hidden_layers.{layer}.thetas.txt")),
+        "branch_output_bias": np.loadtxt(os.path.join(directory, f"branch.output_layer.bias.txt")),
+        "branch_output_weight": np.loadtxt(os.path.join(directory, f"branch.output_layer.weight.txt")),
+        "trunk_hidden_bias": np.loadtxt(os.path.join(directory, f"trunk.hidden_layers.{layer}.bias.txt")),
+        "trunk_hidden_thetas": np.loadtxt(os.path.join(directory, f"trunk.hidden_layers.{layer}.thetas.txt")),
+        "trunk_output_bias": np.loadtxt(os.path.join(directory, f"trunk.output_layer.bias.txt")),
+        "trunk_output_weight": np.loadtxt(os.path.join(directory, f"trunk.output_layer.weight.txt")),
 
         "final_bias": np.loadtxt(os.path.join(directory, "b.txt"))
     }
