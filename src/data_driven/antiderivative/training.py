@@ -6,7 +6,7 @@ import random
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import deepxde as dde
 import numpy as np
@@ -36,6 +36,8 @@ class Config:
     branch_hidden: int = 10
     trunk_hidden: int = 10
     shared_output: int = 10  # Output layer size must be shared
+    layers: List[int] = None
+
 
 
 def load_config(path: str) -> Config:
@@ -137,8 +139,12 @@ class TrainingRunner:
         m = x_train[0].shape[1]
         dim_x = x_train[1].shape[1]
 
-        layer_sizes_branch = [m, self.config.branch_hidden, self.config.shared_output]
-        layer_sizes_trunk = [dim_x, self.config.trunk_hidden, self.config.shared_output]
+        if self.config.layers is None:
+            layer_sizes_branch = [m, self.config.branch_hidden, self.config.shared_output]
+            layer_sizes_trunk = [dim_x, self.config.trunk_hidden, self.config.shared_output]
+        else:
+            layer_sizes_branch = [m].extend(self.config.layers)
+            layer_sizes_trunk = [dim_x].extend(self.config.layers)
 
         net = OrthoONetCartesianProd(
             layer_sizes_branch=layer_sizes_branch,

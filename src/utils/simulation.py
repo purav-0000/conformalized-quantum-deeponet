@@ -68,16 +68,13 @@ def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gat
         import pyzx as zx
         from qiskit import QuantumCircuit
         from qiskit.qasm2 import dump
-        from qiskit.providers.fake_provider import FakeToronto
         from qiskit.transpiler import PassManager, InstructionDurations
         from qiskit.transpiler.passes import ASAPSchedule
-        backend = FakeToronto()
 
-        t_qc = transpile(circuit, backend=backend, optimization_level=0)
 
-        with open("circuit.qasm", "w") as f:
-            dump(t_qc, f)
+        t_qc = transpile(circuit, optimization_level=2, basis_gates=['ecr', 'rz', 'sx', 'x'])
 
+        """
         # pyZX stuff
         circ = zx.Circuit.from_qasm_file('circuit.qasm')
         # Optimize
@@ -93,11 +90,12 @@ def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gat
         t_qc = transpile(t_qc, backend=backend, optimization_level=2)
 
         print(t_qc)
+        """
 
         print(f"\n--- Realistic Circuit Cost ---")
         print(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}")
 
-        exit(1)
+        # exit(1)
         """
         instruction_durations = backend.target.durations()
 
@@ -191,12 +189,24 @@ def plot_pred(
     # Average width
     average_width = np.mean(upper - lower)
 
+    # Covariance
+    # Reshape to (num_models, batch_size * output_dim)
+    num_models = y_pred.shape[0]
+    cov_matrix = np.cov(y_pred.reshape(num_models, -1))
+    num_off_diagonal = num_models * (num_models - 1)
+    avg_covariance = (np.sum(cov_matrix) - np.trace(cov_matrix)) / num_off_diagonal
+
     fig.suptitle(
         f"Prediction with conformal intervals\n"
         f"Error: {error:.6f}\n"
         f"Coverage: {coverage_percent:.6f}\n"
         f"Average width: {average_width:.6f}"
     )
+    print(f"Average width: {average_width:.6f}")
+    print(f"Max width: {np.max(upper - lower):.6f}")
+    print(f"Avg covariance: {avg_covariance:.6f}")
+    print(f"Coverage: {coverage_percent:.6f}")
+
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     plt.savefig(output_dir / f"predictions_plot_{timestamp}.png")

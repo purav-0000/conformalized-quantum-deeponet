@@ -10,3 +10,4 @@ ensemble_name: null
 branch_hidden: 10
 trunk_hidden: 10
 shared_output: 10
+layers: null

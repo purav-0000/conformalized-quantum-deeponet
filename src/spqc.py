@@ -124,24 +124,26 @@ def _apply_parallel_w(circuit, n_in, n_out, thetas, addr_qr, tomo_qr):
             q_start_index += 2
         theta_start_idx += num_thetas_in_slice
 
-        """
-        for j in range(num_models):
-            q_start_index_per_model = q_start_index
-            theta_slice = thetas[j][theta_start_index:theta_start_index+q_slice_sizes[i]//2]
-            print(theta_slice.shape)
-            for theta in theta_slice:
-                controlled_RBS = RBS(theta).control(num_addr_qubits, ctrl_state=j)
-                tomo_circuit.compose(controlled_RBS, qubits=addr_qr[:] + [tomo_qr[q_start_index_per_model]] + [tomo_qr[q_start_index_per_model + 1]], inplace=True)
-                q_start_index_per_model += 2
-        theta_start_index += q_slice_sizes[i]//2
-        """
 
-    """
-    for i, W_gate in enumerate(model_Ws):
-        controlled_W = W_gate.control(num_addr_qubits, ctrl_state=i)
-        tomo_circuit.append(controlled_W, addr_qr[:] + tomo_qr[:])
-    """
+"""
+for j in range(num_models):
+    q_start_index_per_model = q_start_index
+    theta_slice = thetas[j][theta_start_index:theta_start_index+q_slice_sizes[i]//2]
+    print(theta_slice.shape)
+    for theta in theta_slice:
+        controlled_RBS = RBS(theta).control(num_addr_qubits, ctrl_state=j)
+        tomo_circuit.compose(controlled_RBS, qubits=addr_qr[:] + [tomo_qr[q_start_index_per_model]] + [tomo_qr[q_start_index_per_model + 1]], inplace=True)
+        q_start_index_per_model += 2
+theta_start_index += q_slice_sizes[i]//2
+"""
 
+"""
+for i, W_gate in enumerate(model_Ws):
+controlled_W = W_gate.control(num_addr_qubits, ctrl_state=i)
+tomo_circuit.append(controlled_W, addr_qr[:] + tomo_qr[:])
+"""
+
+"""
 def SPQC_circuit(n_in, n_out, thetas, data_array, loader_inv_gate, loader_special_gate):
 
     num_qubits = max(n_in, n_out)
@@ -183,11 +185,11 @@ def SPQC_circuit(n_in, n_out, thetas, data_array, loader_inv_gate, loader_specia
     tomo_circuit.append(loader_data_gate, input_qubits)
 
 
-    """
+
     for i, W_gate in enumerate(model_Ws):
         controlled_W = W_gate.control(num_addr_qubits, ctrl_state=i)
         tomo_circuit.append(controlled_W, addr_qr[:] + tomo_qr[:])
-    """
+
 
     # ----------------------------------------------------
 
@@ -251,7 +253,7 @@ def SPQC_circuit(n_in, n_out, thetas, data_array, loader_inv_gate, loader_specia
             q_start_index += 2
         theta_start_index += q_slice_sizes[i] // 2
 
-        """
+
         for j in range(num_models):
             q_start_index_per_model = q_start_index
             theta_slice = thetas[j][theta_start_index:theta_start_index+q_slice_sizes[i]//2]
@@ -261,7 +263,7 @@ def SPQC_circuit(n_in, n_out, thetas, data_array, loader_inv_gate, loader_specia
                 tomo_circuit.compose(controlled_RBS, qubits=addr_qr[:] + [tomo_qr[q_start_index_per_model]] + [tomo_qr[q_start_index_per_model + 1]], inplace=True)
                 q_start_index_per_model += 2
         theta_start_index += q_slice_sizes[i]//2
-        """
+
     # ----------------------------------------------------
 
     tomo_circuit.append(loader_inv_gate, tomo_qubits)
@@ -273,4 +275,4 @@ def SPQC_circuit(n_in, n_out, thetas, data_array, loader_inv_gate, loader_specia
     tomo_circuit.h(anc_qr)
 
     return tomo_circuit
-
+"""

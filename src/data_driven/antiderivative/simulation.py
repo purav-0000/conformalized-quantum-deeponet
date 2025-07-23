@@ -505,11 +505,12 @@ class SimulationRunner:
         loader_gate = data_loader(np.full(max(n_in, n_out), 1 / sqrt_norm))
         loader_inv_gate = loader_gate.inverse()
 
+
         if self.config.analyze_circuit_cost:
             print("Branch, " if not is_trunk else "Trunk, ", end='')
-            print(f"n_in: {n_in}, n_out: {n_out}, thetas_shape: {ensemble_params['hidden0_thetas'][0].shape}")
+            print(f"n_in: {n_in}, n_out: {n_out}, thetas_shape: {ensemble_params['hidden_thetas'][0].shape}")
             self._build_spqc_circuit(
-                inputs[0], n_in, n_out, ensemble_params['hidden0_thetas'], loader_gate, loader_inv_gate, cost_check=True
+                inputs[0], n_in, n_out, ensemble_params['hidden_thetas'], loader_gate, loader_inv_gate, cost_check=True
             )
 
 
@@ -545,16 +546,12 @@ class SimulationRunner:
             import pyzx as zx
             from qiskit import QuantumCircuit
             from qiskit.qasm2 import dump
-            from qiskit_ibm_runtime.fake_provider import FakeToronto
             from qiskit.transpiler import PassManager, InstructionDurations
             from qiskit.transpiler.passes import ASAPSchedule
-            backend = FakeToronto()
 
-            t_qc = transpile(circ, backend=backend, optimization_level=0)
+            t_qc = transpile(circ, optimization_level=2, basis_gates=['ecr', 'rz', 'sx', 'x'])
 
-            with open("circuit.qasm", "w") as f:
-                dump(t_qc, f)
-
+            """
             # pyZX stuff
             circ = zx.Circuit.from_qasm_file('circuit.qasm')
             # Optimize
@@ -566,15 +563,12 @@ class SimulationRunner:
             # Convert directly to Qiskit QuantumCircuit without writing file
             qasm_str = new_circ.to_qasm()
             t_qc = QuantumCircuit.from_qasm_str(qasm_str)
-
-            t_qc = transpile(t_qc, backend=backend, optimization_level=2)
-
-            print(t_qc)
+            """
 
             print(f"\n--- Realistic Circuit Cost ---")
             print(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}")
 
-            exit(1)
+            # exit(1)
 
             """
             instruction_durations = backend.target.durations()
