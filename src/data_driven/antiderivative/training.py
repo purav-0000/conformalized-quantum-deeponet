@@ -36,7 +36,7 @@ class Config:
     branch_hidden: int = 10
     trunk_hidden: int = 10
     shared_output: int = 10  # Output layer size must be shared
-    layers: List[int] = None
+    layers: List[int] = field(default_factory=lambda: [10, 10])
 
 
 
@@ -139,13 +139,17 @@ class TrainingRunner:
         m = x_train[0].shape[1]
         dim_x = x_train[1].shape[1]
 
+        layer_sizes_branch, layer_sizes_trunk = None, None
         if self.config.layers is None:
             layer_sizes_branch = [m, self.config.branch_hidden, self.config.shared_output]
             layer_sizes_trunk = [dim_x, self.config.trunk_hidden, self.config.shared_output]
         else:
-            layer_sizes_branch = [m].extend(self.config.layers)
-            layer_sizes_trunk = [dim_x].extend(self.config.layers)
+            self.config.layers = [int(layer) for layer in self.config.layers]
+            layer_sizes_branch = [m] + self.config.layers
+            layer_sizes_trunk = [dim_x] + self.config.layers
 
+        print(layer_sizes_branch)
+        print(layer_sizes_trunk)
         net = OrthoONetCartesianProd(
             layer_sizes_branch=layer_sizes_branch,
             layer_sizes_trunk=layer_sizes_trunk,
