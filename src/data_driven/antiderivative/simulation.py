@@ -549,7 +549,7 @@ class SimulationRunner:
             from qiskit.transpiler import PassManager, InstructionDurations
             from qiskit.transpiler.passes import ASAPSchedule
 
-            t_qc = transpile(circ, optimization_level=2, basis_gates=['ecr', 'rz', 'sx', 'x'])
+            t_qc = transpile(circ, optimization_level=2, basis_gates=['cz', 'rz', 'rx', 'sx', 'x', 'rzz'])
 
             """
             # pyZX stuff

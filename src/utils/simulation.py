@@ -72,7 +72,7 @@ def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gat
         from qiskit.transpiler.passes import ASAPSchedule
 
 
-        t_qc = transpile(circuit, optimization_level=2, basis_gates=['ecr', 'rz', 'sx', 'x'])
+        t_qc = transpile(circuit, optimization_level=2, basis_gates=['cz', 'rz', 'rx', 'sx', 'x', 'rzz'])
 
         """
         # pyZX stuff
