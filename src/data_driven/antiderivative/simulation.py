@@ -277,7 +277,6 @@ class SimulationRunner:
 
         if self.config.mode == 'shots':
             counts = np.random.multinomial(self.config.shots, probabilities)
-            state_probs = counts / self.config.shots
 
             # Apply error mitigation if noisy
             if self.config.noise > 0.0:
@@ -294,11 +293,12 @@ class SimulationRunner:
 
                     valid_indices.extend([int(pos0_str, 2), int(pos1_str, 2)])
 
-                invalid_indices = np.setdiff1d(np.arange(len(state_probs)), valid_indices)
-                state_probs[invalid_indices] = 0
+                invalid_indices = np.setdiff1d(np.arange(len(counts)), valid_indices)
+                counts[invalid_indices] = 0
 
-                state_probs = state_probs / np.sum(state_probs)
-
+                state_probs = counts / np.sum(counts)
+            else:
+                state_probs = counts / self.config.shots
 
         else:  # ideal mode
             state_probs = probabilities
@@ -594,77 +594,76 @@ class SimulationRunner:
 
         # Optional: Analyze circuit cost against a realistic backend
         if cost_check:
-            import pyzx as zx
-            from qiskit import QuantumCircuit
-            from qiskit.qasm2 import dump
-            from qiskit.transpiler import PassManager, InstructionDurations
-            from qiskit.transpiler.passes import ASAPSchedule
 
             t_qc = transpile(circ, optimization_level=2, basis_gates=['cz', 'rz', 'rx', 'sx', 'x', 'rzz'])
-
-            """
-            # pyZX stuff
-            circ = zx.Circuit.from_qasm_file('circuit.qasm')
-            # Optimize
-            g = circ.to_basic_gates().to_graph()
-            zx.simplify.full_reduce(g, quiet=True)
-            g.normalize()
-            new_circ = zx.extract_circuit(g)
-
-            # Convert directly to Qiskit QuantumCircuit without writing file
-            qasm_str = new_circ.to_qasm()
-            t_qc = QuantumCircuit.from_qasm_str(qasm_str)
-            """
 
             print(f"\n--- Realistic Circuit Cost ---")
             print(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}")
 
             # exit(1)
 
-            """
-            instruction_durations = backend.target.durations()
-
-            # 6. Create a PassManager with the explicit durations object
-            pm = PassManager([ASAPSchedule(instruction_durations)])
-            scheduled_qc = pm.run(t_qc)  # Use one of the transpiled circuits
-
-            # 7. Access the duration in 'dt' units
-            duration_dt = scheduled_qc.duration
-
-            if duration_dt:
-                # 8. Get the value of dt from the backend's TARGET attribute
-                dt_in_seconds = backend.target.dt
-                duration_us = duration_dt * dt_in_seconds * 1e6  # convert to microseconds
-
-                print("\n--- Realistic Circuit Cost (Duration) ---")
-                print(f"Duration in dt: {duration_dt} dt")
-                print(f"Backend dt unit: {dt_in_seconds * 1e9:.3f} ns")
-                print(f"Total Duration: {duration_us:.2f} µs")
-            else:
-                print("\nCircuit could not be scheduled.")
-            """
             print()
 
             return
 
-        circ.save_statevector('state')
-        return transpile(circ, self.simulator)
+        if self.config.noise > 0.0:
+            circ.save_density_matrix()
+        else:
+            circ.save_statevector('state')
+        return transpile(circ, self.simulator, optimization_level=1)
 
 
     def _process_spqc_output(self, idx, results, n_in, n_out, params, last_layer, is_trunk):
         """Processes the combined statevector from an SPQC circuit run."""
-        statevector = np.real(results.data(idx)['state'].data)
+
+        # Get probabilities if noisy simulation
+        if self.config.noise > 0.0:
+            # Diagonal has probabilities for basis states
+            probabilities = results.data(idx)['density_matrix'].data.diagonal().real
+        else:
+            statevector = np.real(results.data(idx)['state'].data)
+            probabilities = statevector ** 2
+
+        # Now we have address bits
+        num_models = len(params['hidden_bias'])
+        addr_format_bits = int(np.ceil(np.log2(num_models))) if num_models > 1 else 0
 
         if self.config.mode == 'shots':
-            probabilities = statevector ** 2
             counts = np.random.multinomial(self.config.shots, probabilities)
-            state_probs = counts / self.config.shots
-        else:  # ideal mode
-            state_probs = statevector ** 2
 
-        num_models = len(params['hidden_bias'])
+            # Apply error mitigation if noisy
+            if self.config.noise > 0.0:
+
+                # Indices for all unary vectors
+                valid_indices = []
+                for i in range(n_out):
+                    pos_vec = ['0'] * n_out
+                    pos_vec[i] = '1'
+                    # Qiskit uses a little-endian convention (qubit 0 is the rightmost bit),
+                    # so we build the string and then reverse it to match the statevector index.
+                    pos0_str = (''.join(['0'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
+                    pos1_str = (''.join(['1'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
+
+                    for j in range(num_models):
+                        addr_str = format(j, f'0{addr_format_bits}b')
+                        # Note: Qiskit's endianness means address qubits might be at the high-order end.
+                        # Assuming statevector format is |tomo⟩|anc⟩|addr⟩
+                        idx0 = int(pos0_str + addr_str, 2)
+                        idx1 = int(pos1_str + addr_str, 2)
+
+                        valid_indices.extend([idx0, idx1])
+
+                invalid_indices = np.setdiff1d(np.arange(len(counts)), valid_indices)
+                counts[invalid_indices] = 0
+
+                state_probs = counts / np.sum(counts)
+            else:
+                state_probs = counts / self.config.shots
+
+        else:  # ideal mode
+            state_probs = probabilities
+
         all_outputs = np.zeros((num_models, n_out))
-        addr_format_bits = int(np.ceil(np.log2(num_models))) if num_models > 1 else 0
 
         # Bit indexing now includes iterating through model addresses
         for i in range(n_out):
