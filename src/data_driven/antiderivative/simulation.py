@@ -309,15 +309,17 @@ class SimulationRunner:
         """
 
         if self.config.mode == 'shots':
-            if self.config.noise > 0.0:
-                # Get measurement counts directly (from repeated noisy shots)
-                counts_dict = results.get_counts(idx)
-                counts = np.zeros(2 ** (n_out + 1))  # Total number of basis states
 
-                # Convert bitstrings to integer indices (Qiskit uses little-endian)
-                for bitstr, count in counts_dict.items():
-                    index = int(bitstr.replace(' ', '')[::-1], 2)
-                    counts[index] = count
+            # Get measurement counts directly (from repeated noisy shots)
+            counts_dict = results.get_counts(idx)
+            counts = np.zeros(2 ** (n_out + 1))  # Total number of basis states
+
+            # Convert bitstrings to integer indices (Qiskit uses little-endian)
+            for bitstr, count in counts_dict.items():
+                index = int(bitstr.replace(' ', '')[::-1], 2)
+                counts[index] = count
+
+            if self.config.noise > 0.0:
 
                 # Error mitigation
                 valid_indices = []
@@ -335,9 +337,6 @@ class SimulationRunner:
 
             else:
                 # Ideal + shots: sample from ideal probabilities
-                statevector = np.real(results.data(idx)['state'].data)
-                probabilities = statevector ** 2
-                counts = np.random.multinomial(self.config.shots, probabilities)
                 state_probs = counts / self.config.shots
 
         else:  # ideal + analytic
