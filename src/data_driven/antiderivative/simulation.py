@@ -74,7 +74,7 @@ class SimulationRunner:
         # Set up noise model
         # For basis gates of Eagle processor
         noise_model = NoiseModel(basis_gates=['ecr', 'id', 'rz', 'sx', 'x'])
-        print(self.config.noise)
+        print("Noise level: ", self.config.noise)
         error_all_qubit = depolarizing_error(self.config.noise, 1)
         error_all_qubit2 = depolarizing_error(0.8 * self.config.noise, 2)
         noise_model.add_all_qubit_quantum_error(error_all_qubit, ['id', 'rz', 'sx', 'x'])
@@ -242,7 +242,7 @@ class SimulationRunner:
         if self.config.noise > 0.0:
             is_noisy = True
 
-        for i in tqdm(range(0, len(inputs), batch_size)):
+        for i in tqdm(range(0, len(inputs), batch_size), desc="Running trunk layer" if is_trunk else "Running branch layer"):
             batch = inputs[i:i + batch_size]
 
             circuits = Parallel(n_jobs=self.config.n_jobs)(
@@ -258,6 +258,8 @@ class SimulationRunner:
                 for j in range(len(batch))
             ]
             all_outputs.extend(batch_outputs)
+
+        print()
 
         return np.array(all_outputs)
 
@@ -276,6 +278,28 @@ class SimulationRunner:
         if self.config.mode == 'shots':
             counts = np.random.multinomial(self.config.shots, probabilities)
             state_probs = counts / self.config.shots
+
+            # Apply error mitigation if noisy
+            if self.config.noise > 0.0:
+
+                # Indices for all unary vectors
+                valid_indices = []
+                for i in range(n_out):
+                    pos_vec = ['0'] * n_out
+                    pos_vec[i] = '1'
+                    # Qiskit uses a little-endian convention (qubit 0 is the rightmost bit),
+                    # so we build the string and then reverse it to match the statevector index.
+                    pos0_str = (''.join(['0'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
+                    pos1_str = (''.join(['1'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
+
+                    valid_indices.extend([int(pos0_str, 2), int(pos1_str, 2)])
+
+                invalid_indices = np.setdiff1d(np.arange(len(state_probs)), valid_indices)
+                state_probs[invalid_indices] = 0
+
+                state_probs = state_probs / np.sum(state_probs)
+
+
         else:  # ideal mode
             state_probs = probabilities
 

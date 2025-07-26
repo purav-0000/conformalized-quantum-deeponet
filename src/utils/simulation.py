@@ -49,6 +49,7 @@ def evaluate_model(y_pred: np.ndarray, y_true: np.ndarray, save_dir: Path=None, 
     error = np.mean(np.linalg.norm(y_pred_mean - y_true, axis=1) / np.linalg.norm(y_true, axis=1))
 
     if verbose:
+        print("--- Stats ---")
         print(f"Mean Relative L2 Error: {error:.6f}")
 
     if save_dir:
@@ -65,60 +66,12 @@ def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gat
 
     # Optional: Analyze circuit cost against a realistic backend
     if cost_check:
-        import pyzx as zx
-        from qiskit import QuantumCircuit
-        from qiskit.qasm2 import dump
-        from qiskit.transpiler import PassManager, InstructionDurations
-        from qiskit.transpiler.passes import ASAPSchedule
-
 
         t_qc = transpile(circuit, optimization_level=2, basis_gates=['cz', 'rz', 'rx', 'sx', 'x', 'rzz'])
-
-        """
-        # pyZX stuff
-        circ = zx.Circuit.from_qasm_file('circuit.qasm')
-        # Optimize
-        g = circ.to_basic_gates().to_graph()
-        zx.simplify.full_reduce(g, quiet=True)
-        g.normalize()
-        new_circ = zx.extract_circuit(g)
-
-        # Convert directly to Qiskit QuantumCircuit without writing file
-        qasm_str = new_circ.to_qasm()
-        t_qc = QuantumCircuit.from_qasm_str(qasm_str)
-
-        t_qc = transpile(t_qc, backend=backend, optimization_level=2)
-
-        print(t_qc)
-        """
 
         print(f"\n--- Realistic Circuit Cost ---")
         print(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}")
 
-        # exit(1)
-        """
-        instruction_durations = backend.target.durations()
-
-        
-        # 6. Create a PassManager with the explicit durations object
-        pm = PassManager([ASAPSchedule(instruction_durations)])
-        scheduled_qc = pm.run(t_qc)  # Use one of the transpiled circuits
-
-        # 7. Access the duration in 'dt' units
-        duration_dt = scheduled_qc.duration
-
-        if duration_dt:
-            # 8. Get the value of dt from the backend's TARGET attribute
-            dt_in_seconds = backend.target.dt
-            duration_us = duration_dt * dt_in_seconds * 1e6  # convert to microseconds
-
-            print("\n--- Realistic Circuit Cost (Duration) ---")
-            print(f"Duration in dt: {duration_dt} dt")
-            print(f"Backend dt unit: {dt_in_seconds * 1e9:.3f} ns")
-            print(f"Total Duration: {duration_us:.2f} µs")
-        else:
-            print("\nCircuit could not be scheduled.")
-        """
         print()
         return
 
@@ -175,40 +128,47 @@ def plot_pred(
     error = evaluate_model(y_pred, y_test)
 
     # Calculate coverage
-    mean_pred = y_pred.mean(axis=0)
-    std_pred = y_pred.std(axis=0)
+    if is_ensemble:
+        mean_pred = y_pred.mean(axis=0)
+        std_pred = y_pred.std(axis=0)
 
-    lower = mean_pred - q_hat * std_pred
-    upper = mean_pred + q_hat * std_pred
+        lower = mean_pred - q_hat * std_pred
+        upper = mean_pred + q_hat * std_pred
 
-    # Element-wise boolean mask
-    in_interval = (y_test >= lower) & (y_test <= upper)
+        # Element-wise boolean mask
+        in_interval = (y_test >= lower) & (y_test <= upper)
 
-    # Fraction or percentage of covered points
-    coverage = np.mean(in_interval)  # fraction in [0, 1]
-    # Optional: convert to percent
-    coverage_percent = 100 * coverage
+        # Fraction or percentage of covered points
+        coverage = np.mean(in_interval)  # fraction in [0, 1]
+        # Optional: convert to percent
+        coverage_percent = 100 * coverage
 
-    # Average width
-    average_width = np.mean(upper - lower)
+        # Average width
+        average_width = np.mean(upper - lower)
 
-    # Covariance
-    # Reshape to (num_models, batch_size * output_dim)
-    num_models = y_pred.shape[0]
-    cov_matrix = np.cov(y_pred.reshape(num_models, -1))
-    num_off_diagonal = num_models * (num_models - 1)
-    avg_covariance = (np.sum(cov_matrix) - np.trace(cov_matrix)) / num_off_diagonal
+        # Covariance
+        # Reshape to (num_models, batch_size * output_dim)
+        num_models = y_pred.shape[0]
+        cov_matrix = np.cov(y_pred.reshape(num_models, -1))
+        num_off_diagonal = num_models * (num_models - 1)
+        avg_covariance = (np.sum(cov_matrix) - np.trace(cov_matrix)) / num_off_diagonal
 
-    fig.suptitle(
-        f"Prediction with conformal intervals\n"
-        f"Error: {error:.6f}\n"
-        f"Coverage: {coverage_percent:.6f}\n"
-        f"Average width: {average_width:.6f}"
-    )
-    print(f"Average width: {average_width:.6f}")
-    print(f"Max width: {np.max(upper - lower):.6f}")
-    print(f"Avg covariance: {avg_covariance:.6f}")
-    print(f"Coverage: {coverage_percent:.6f}")
+        fig.suptitle(
+            f"Prediction with conformal intervals\n"
+            f"Error: {error:.6f}\n"
+            f"Coverage: {coverage_percent:.6f}\n"
+            f"Average width: {average_width:.6f}"
+        )
+        print(f"Average width: {average_width:.6f}")
+        print(f"Max width: {np.max(upper - lower):.6f}")
+        print(f"Avg covariance: {avg_covariance:.6f}")
+        print(f"Coverage: {coverage_percent:.6f}")
+    else:
+        fig.suptitle(
+            f"Prediction for single model\n"
+            f"Error: {error:.6f}\n"
+        )
+    print()
 
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
