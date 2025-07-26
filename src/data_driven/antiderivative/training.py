@@ -148,8 +148,8 @@ class TrainingRunner:
             layer_sizes_branch = [m] + self.config.layers
             layer_sizes_trunk = [dim_x] + self.config.layers
 
-        print(layer_sizes_branch)
-        print(layer_sizes_trunk)
+        print("Layers for branch:", layer_sizes_branch)
+        print("Layers for trunk:", layer_sizes_trunk)
         net = OrthoONetCartesianProd(
             layer_sizes_branch=layer_sizes_branch,
             layer_sizes_trunk=layer_sizes_trunk,

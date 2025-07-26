@@ -57,7 +57,7 @@ def evaluate_model(y_pred: np.ndarray, y_true: np.ndarray, save_dir: Path=None, 
     return error
 
 
-def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gate, loader_inv_gate, simulator, cost_check=False):
+def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gate, loader_inv_gate, simulator, cost_check=False, noisy=False):
     x_input_stable = x_input.copy()
     x_input_stable[np.abs(x_input_stable) < 1e-7] += 1e-7
 
@@ -122,8 +122,11 @@ def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gat
         print()
         return
 
-    circuit.save_statevector('state')
-    return transpile(circuit, simulator)
+    if noisy:
+        circuit.save_density_matrix()
+    else:
+        circuit.save_statevector('state')
+    return transpile(circuit, simulator, optimization_level=2)
 
 
 def plot_pred(

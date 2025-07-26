@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 from qiskit import transpile
 from qiskit_aer import AerSimulator
+from qiskit_aer.noise import depolarizing_error, NoiseModel
 from src.classical_orthogonal_NN import OrthoNN
 from src.quantum_layer_ideal import data_loader, W
 from src.spqc import create_spqc_circuit
@@ -47,6 +48,7 @@ class Config:
     analyze_circuit_cost: bool = False
     classical_branch: bool = False
     classical_trunk: bool = False
+    noise: float = 0.0
 
 
 def load_config(path: str) -> Config:
@@ -68,7 +70,18 @@ class SimulationRunner:
 
     def __init__(self, config: Config):
         self.config = config
-        self.simulator = AerSimulator(device=self.config.simulator)
+
+        # Set up noise model
+        # For basis gates of Eagle processor
+        noise_model = NoiseModel(basis_gates=['ecr', 'id', 'rz', 'sx', 'x'])
+        print(self.config.noise)
+        error_all_qubit = depolarizing_error(self.config.noise, 1)
+        error_all_qubit2 = depolarizing_error(0.8 * self.config.noise, 2)
+        noise_model.add_all_qubit_quantum_error(error_all_qubit, ['id', 'rz', 'sx', 'x'])
+        noise_model.add_all_qubit_quantum_error(error_all_qubit2, ['ecr'])
+
+        method = 'density_matrix' if self.config.noise > 0.0 else 'statevector'
+        self.simulator = AerSimulator(device=self.config.simulator, method=method)
         self.data_handler = DataHandler(self.config.data_dir)
 
         run_type = "SPQC" if self.config.spqc else "Sequential"
@@ -214,6 +227,9 @@ class SimulationRunner:
         all_outputs = []
         batch_size = self.config.batch_size or len(inputs)
 
+        # If batch_size is type str
+        batch_size = int(batch_size) if type(batch_size) is str else batch_size
+
         if self.config.analyze_circuit_cost:
             print("Branch, " if not is_trunk else "Trunk, ", end='')
             print(f"n_in: {n_in}, n_out: {n_out}, thetas_shape: {thetas.shape}")
@@ -221,11 +237,16 @@ class SimulationRunner:
                 inputs[0], n_in, n_out, W_gate, loader_gate, loader_inv_gate, self.simulator, cost_check=True
             )   # Analyze depth using arbitray input
 
-        for i in range(0, len(inputs), batch_size):
+        # Noisy sim?
+        is_noisy = False
+        if self.config.noise > 0.0:
+            is_noisy = True
+
+        for i in tqdm(range(0, len(inputs), batch_size)):
             batch = inputs[i:i + batch_size]
 
             circuits = Parallel(n_jobs=self.config.n_jobs)(
-                delayed(build_circuit)(x, n_in, n_out, W_gate, loader_gate, loader_inv_gate, self.simulator)
+                delayed(build_circuit)(x, n_in, n_out, W_gate, loader_gate, loader_inv_gate, self.simulator, noisy=is_noisy)
                 for x in batch
             )
 
@@ -243,14 +264,20 @@ class SimulationRunner:
     def _process_quantum_output(self, idx, results, n_in, n_out, hidden0_bias, output_weight, output_bias,
                                 last_layer: bool, is_trunk: bool):
         """Processes the raw statevector from a single circuit run."""
-        statevector = np.real(results.data(idx)['state'].data)
+
+        # Get probabilities if noisy simulation
+        if self.config.noise > 0.0:
+            # Diagonal has probabilities for basis states
+            probabilities = results.data(idx)['density_matrix'].data.diagonal().real
+        else:
+            statevector = np.real(results.data(idx)['state'].data)
+            probabilities = statevector ** 2
 
         if self.config.mode == 'shots':
-            probabilities = statevector ** 2
             counts = np.random.multinomial(self.config.shots, probabilities)
             state_probs = counts / self.config.shots
         else:  # ideal mode
-            state_probs = statevector ** 2
+            state_probs = probabilities
 
         # Bit indexing to extract expectation values
         output = []
