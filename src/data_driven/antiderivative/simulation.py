@@ -81,7 +81,7 @@ class SimulationRunner:
         noise_model.add_all_qubit_quantum_error(error_all_qubit2, ['ecr'])
 
         method = 'density_matrix' if self.config.noise > 0.0 else 'statevector'
-        self.simulator = AerSimulator(device=self.config.simulator, method=method)
+        self.simulator = AerSimulator(device=self.config.simulator, method=method, noise_model=noise_model)
         self.data_handler = DataHandler(self.config.data_dir)
 
         run_type = "SPQC" if self.config.spqc else "Sequential"
@@ -197,10 +197,10 @@ class SimulationRunner:
                                                        is_trunk=True)
 
         # Run quantum layer
-        for i in range(last_layer_num + 1):
+        for i in range(0, last_layer_num + 1):
             weights = load_weights(model_path, layer=i)
 
-            if i == last_layer:
+            if i == last_layer_num:
                 last_layer = True
 
             if not self.config.classical_branch:
