@@ -79,7 +79,7 @@ def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gat
         circuit.save_density_matrix()
     else:
         circuit.save_statevector('state')
-    return transpile(circuit, simulator, optimization_level=1)
+    return transpile(circuit, simulator, optimization_level=0)
 
 
 def plot_pred(

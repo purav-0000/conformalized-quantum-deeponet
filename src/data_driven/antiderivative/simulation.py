@@ -81,7 +81,9 @@ class SimulationRunner:
         noise_model.add_all_qubit_quantum_error(error_all_qubit2, ['ecr'])
 
         method = 'density_matrix' if self.config.noise > 0.0 else 'statevector'
-        self.simulator = AerSimulator(device=self.config.simulator, method=method, noise_model=noise_model)
+
+        # EDIT
+        self.simulator = AerSimulator(device=self.config.simulator, method='automatic', noise_model=noise_model)
         self.data_handler = DataHandler(self.config.data_dir)
 
         run_type = "SPQC" if self.config.spqc else "Sequential"
@@ -250,7 +252,8 @@ class SimulationRunner:
                 for x in batch
             )
 
-            results = self.simulator.run(circuits, shots=1).result()
+            # EDIT
+            results = self.simulator.run(circuits, shots=self.config.shots).result()
 
             # Parallelization results in massive overhead, so removed it
             batch_outputs = [
@@ -267,6 +270,7 @@ class SimulationRunner:
                                 last_layer: bool, is_trunk: bool):
         """Processes the raw statevector from a single circuit run."""
 
+        """
         # Get probabilities if noisy simulation
         if self.config.noise > 0.0:
             # Diagonal has probabilities for basis states
@@ -301,6 +305,48 @@ class SimulationRunner:
                 state_probs = counts / self.config.shots
 
         else:  # ideal mode
+            state_probs = probabilities
+        """
+
+        if self.config.mode == 'shots':
+            if self.config.noise > 0.0:
+                # Get measurement counts directly (from repeated noisy shots)
+                counts_dict = results.get_counts(idx)
+                counts = np.zeros(2 ** (n_out + 1))  # Total number of basis states
+
+                # Convert bitstrings to integer indices (Qiskit uses little-endian)
+                for bitstr, count in counts_dict.items():
+                    index = int(bitstr.replace(' ', '')[::-1], 2)
+                    counts[index] = count
+
+                # Error mitigation
+                valid_indices = []
+                for i in range(n_out):
+                    pos_vec = ['0'] * n_out
+                    pos_vec[i] = '1'
+                    pos0_str = (''.join(['0'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
+                    pos1_str = (''.join(['1'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
+                    valid_indices.extend([int(pos0_str, 2), int(pos1_str, 2)])
+
+                invalid_indices = np.setdiff1d(np.arange(len(counts)), valid_indices)
+                counts[invalid_indices] = 0
+
+                state_probs = counts / np.sum(counts)
+
+            else:
+                # Ideal + shots: sample from ideal probabilities
+                statevector = np.real(results.data(idx)['state'].data)
+                probabilities = statevector ** 2
+                counts = np.random.multinomial(self.config.shots, probabilities)
+                state_probs = counts / self.config.shots
+
+        else:  # ideal + analytic
+            if self.config.noise > 0.0:
+                probabilities = results.data(idx)['density_matrix'].data.diagonal().real
+            else:
+                statevector = np.real(results.data(idx)['state'].data)
+                probabilities = statevector ** 2
+
             state_probs = probabilities
 
         # Bit indexing to extract expectation values
