@@ -306,7 +306,7 @@ class SimulationRunner:
 
         else:  # ideal mode
             state_probs = probabilities
-        
+
         # Bit indexing to extract expectation values
         output = []
         for i in range(n_out):
@@ -453,29 +453,18 @@ class SimulationRunner:
 
             inputs = self.data_handler.x_test if data == "test" else self.data_handler.x_cal
 
-            """
-            # Run layers classically instead
-            branch_outputs = [
-                self._run_classical_layer(
-                    inputs[0], inputs[0].shape[1], params["branch"]["hidden0_bias"][0].shape[0],
-                    params["branch"]["hidden0_bias"][i], params["branch"]["output_weight"][i], params["branch"]["output_bias"][i],
-                    params["branch"]["hidden0_thetas"][i], is_trunk=False
-                )
-                for i in range(len(model_dirs))
-            ]
-            branch_outputs = np.array(branch_outputs)
-            
-            # Run layers classically instead
-            trunk_outputs = [
-                self._run_classical_layer(
-                    inputs[1], inputs[1].shape[1], params["trunk"]["hidden0_bias"][0].shape[0],
-                    params["trunk"]["hidden0_bias"][i], params["trunk"]["output_weight"][i], params["trunk"]["output_bias"][i],
-                    params["trunk"]["hidden0_thetas"][i], is_trunk=True
-                )
-                for i in range(len(model_dirs))
-            ]
-            trunk_outputs = np.array(trunk_outputs)
-            """
+            branch_outputs_classic = []
+            if self.config.classical_branch:
+                for model in model_dirs:
+                    branch_outputs_classic.append(self._run_classical_layer(inputs[0],
+                                                                            [load_weights(model, layer=i) for i in
+                                                                            range(last_layer_num + 1)], is_trunk=False))
+            trunk_outputs_classic = []
+            if self.config.classical_trunk:
+                for model in model_dirs:
+                    trunk_outputs_classic.append(self._run_classical_layer(inputs[1],
+                                                                            [load_weights(model, layer=i) for i in
+                                                                            range(last_layer_num + 1)], is_trunk=True))
 
             # Initialize
             branch_outputs, trunk_outputs, params = None, None, None
@@ -530,12 +519,19 @@ class SimulationRunner:
                 inputs = (branch_outputs, trunk_outputs)
 
 
+            if self.config.classical_branch:
+                branch_outputs = np.array(branch_outputs_classic)
+
+            if self.config.classical_trunk:
+                trunk_outputs = np.array(trunk_outputs_classic)
+
             final_preds = []
             for i in range(len(model_dirs)):
                 pred = np.einsum('bi,ni->bn', branch_outputs[i], trunk_outputs[i]) + params["final_bias"][i]
                 final_preds.append(pred)
 
             return np.array(final_preds)
+
 
         cal_outputs = execute_spqc(data="calibration", last_layer_num=last_layer_num)
 
@@ -560,6 +556,8 @@ class SimulationRunner:
         loader_gate = data_loader(np.full(max(n_in, n_out), 1 / sqrt_norm))
         loader_inv_gate = loader_gate.inverse()
 
+        all_outputs = []
+        batch_size = self.config.batch_size or len(inputs)
 
         if self.config.analyze_circuit_cost:
             print("Branch, " if not is_trunk else "Trunk, ", end='')
@@ -568,23 +566,27 @@ class SimulationRunner:
                 inputs[0], n_in, n_out, ensemble_params['hidden_thetas'], loader_gate, loader_inv_gate, cost_check=True
             )
 
+        for i in tqdm(range(0, len(inputs), batch_size), desc="Running trunk layer" if is_trunk else "Running branch layer"):
+            batch = inputs[i:i + batch_size]
 
-        # Circuit construction is now per-input, as it depends on the data_array
-        circuits = Parallel(n_jobs=self.config.n_jobs)(
-            delayed(self._build_spqc_circuit)(
-                x, n_in, n_out, ensemble_params['hidden_thetas'], loader_gate, loader_inv_gate
+            # Circuit construction is now per-input, as it depends on the data_array
+            circuits = Parallel(n_jobs=self.config.n_jobs)(
+                delayed(self._build_spqc_circuit)(
+                    x, n_in, n_out, ensemble_params['hidden_thetas'], loader_gate, loader_inv_gate
+                )
+                for x in batch
             )
-            for x in tqdm(inputs, desc=f"Building SPQC Circuits ({'Trunk' if is_trunk else 'Branch'})")
-        )
 
-        results = self.simulator.run(circuits, shots=1).result()
+            results = self.simulator.run(circuits, shots=1, target_gpus=[self.config.target_gpu]).result()
 
-        batch_outputs = [
-            self._process_spqc_output(j, results, n_in, n_out, ensemble_params, last_layer, is_trunk)
-            for j in tqdm(range(len(inputs)), desc="Processing SPQC Results")
-        ]
+            batch_outputs = [
+                self._process_spqc_output(j, results, n_in, n_out, ensemble_params, last_layer, is_trunk)
+                for j in range(len(batch))
+            ]
 
-        return np.array(batch_outputs)
+            all_outputs.extend(batch_outputs)
+
+        return np.array(all_outputs)
 
 
     def _build_spqc_circuit(self, x_input, n_in, n_out, thetas, loader_gate, loader_inv_gate, cost_check=False):
@@ -619,6 +621,7 @@ class SimulationRunner:
 
     def _process_spqc_output(self, idx, results, n_in, n_out, params, last_layer, is_trunk):
         """Processes the combined statevector from an SPQC circuit run."""
+
 
         # Get probabilities if noisy simulation
         if self.config.noise > 0.0:
