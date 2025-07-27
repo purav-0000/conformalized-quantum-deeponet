@@ -121,7 +121,9 @@ def custom_tomo_fast(n_in, n_out, data_array, W_gate, loader_special_gate, loade
     anc_qr = QuantumRegister(1)
     anc_cr = ClassicalRegister(1)
     tomo_qr = QuantumRegister(num_qubits)
-    tomo_cr = ClassicalRegister(n_out)
+
+    # EDIT?
+    tomo_cr = ClassicalRegister(num_qubits)
     tomo_circuit = QuantumCircuit(anc_qr, tomo_qr, anc_cr, tomo_cr)
 
     input_qubits = list(range(num_qubits - n_in + 1, num_qubits + 1))

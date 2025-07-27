@@ -75,11 +75,13 @@ def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gat
         print()
         return
 
-    # if noisy:
-    #    circuit.save_density_matrix()
-    # else:
-    #    circuit.save_statevector('state')
-    circuit.measure_all()
+    if noisy:
+       circuit.save_density_matrix()
+    else:
+       circuit.save_statevector('state')
+
+    # FOR REALISTIC SIMULATIONS
+    # circuit.measure_all(add_bits=False)
     return transpile(circuit, simulator, optimization_level=0)
 
 
