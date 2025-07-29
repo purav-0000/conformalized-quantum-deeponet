@@ -8,4 +8,4 @@ conda activate qiskit-deeponet
 cd "$(dirname "$0")/.."  # Go one level up from scripts directory
 
 # Launch job launcher in background using nohup
-nohup python scripts/job_launcher.py > job_launcher.log 2>&1 &
+nohup python scripts/job_launcher_cantor.py > job_launcher.log 2>&1 &

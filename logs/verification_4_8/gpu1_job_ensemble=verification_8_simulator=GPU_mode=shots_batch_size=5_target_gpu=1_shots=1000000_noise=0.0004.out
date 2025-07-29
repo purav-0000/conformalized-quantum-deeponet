@@ -1,539 +1,0 @@
-Using backend: pytorch
-Other supported backends: tensorflow.compat.v1, tensorflow, jax, paddle.
-paddle supports more examples now and is recommended.
-Noise level:  0.0004
-Results for this run will be saved in: models/ensembles/verification_8
---- Running in Sequential Ensemble Mode ---
-Found 8 models in ensemble: verification_8
-Running Calibration:   0%|          | 0/8 [00:00<?, ?it/s]
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:07<02:16,  7.18s/it][A
-Running branch layer:  10%|█         | 2/20 [00:13<02:03,  6.84s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:19<01:50,  6.49s/it][A
-Running branch layer:  20%|██        | 4/20 [00:25<01:39,  6.24s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:31<01:32,  6.16s/it][A
-Running branch layer:  30%|███       | 6/20 [00:37<01:26,  6.16s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:18,  6.06s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:13,  6.10s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:06,  6.02s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<00:59,  5.99s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:54,  6.01s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:13<00:47,  5.99s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:19<00:42,  6.00s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:25<00:36,  6.01s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:31<00:30,  6.02s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:37<00:24,  6.05s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:43<00:18,  6.05s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:50<00:12,  6.08s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:56<00:06,  6.06s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:02<00:00,  6.06s/it][ARunning branch layer: 100%|██████████| 20/20 [02:02<00:00,  6.11s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.66s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.67s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:07<00:07,  2.66s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.74s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.74s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.71s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.71s/it]
-Running Calibration:  12%|█▎        | 1/8 [02:18<16:09, 138.50s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:56,  6.12s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:49,  6.10s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:42,  6.05s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:36,  6.06s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:31,  6.09s/it][A
-Running branch layer:  30%|███       | 6/20 [00:36<01:25,  6.10s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:42<01:18,  6.06s/it][A
-Running branch layer:  40%|████      | 8/20 [00:48<01:13,  6.08s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:54<01:07,  6.10s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:00<01:01,  6.10s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:55,  6.11s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:12<00:48,  6.06s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:19<00:42,  6.10s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:25<00:36,  6.10s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:31<00:30,  6.14s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:37<00:24,  6.10s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:43<00:18,  6.13s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:49<00:12,  6.15s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:56<00:06,  6.16s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:02<00:00,  6.14s/it][ARunning branch layer: 100%|██████████| 20/20 [02:02<00:00,  6.11s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.71s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.66s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.69s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.67s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.71s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.70s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.69s/it]
-Running Calibration:  25%|██▌       | 2/8 [04:36<13:50, 138.50s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:57,  6.17s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:51,  6.21s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:44,  6.13s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.17s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:31,  6.12s/it][A
-Running branch layer:  30%|███       | 6/20 [00:36<01:25,  6.13s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:19,  6.15s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:13,  6.13s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:07,  6.15s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:01,  6.16s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:55,  6.18s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:13<00:49,  6.14s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:19<00:43,  6.16s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:36,  6.16s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.15s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.15s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:44<00:18,  6.07s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:50<00:12,  6.08s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:56<00:06,  6.09s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:02<00:00,  6.12s/it][ARunning branch layer: 100%|██████████| 20/20 [02:02<00:00,  6.14s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.61s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.62s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.69s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.64s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.64s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:15<00:00,  2.65s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:15<00:00,  2.65s/it]
-Running Calibration:  38%|███▊      | 3/8 [06:55<11:32, 138.55s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:57,  6.18s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:51,  6.17s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:45,  6.21s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.18s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:32,  6.15s/it][A
-Running branch layer:  30%|███       | 6/20 [00:37<01:26,  6.16s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.16s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:13,  6.16s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:07,  6.13s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:01,  6.15s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:55,  6.14s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:13<00:49,  6.15s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.16s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:37,  6.17s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.17s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.17s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:44<00:18,  6.16s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:50<00:12,  6.15s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:56<00:06,  6.08s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:02<00:00,  6.09s/it][ARunning branch layer: 100%|██████████| 20/20 [02:02<00:00,  6.14s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.64s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.64s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.68s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.67s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.68s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.68s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.67s/it]
-Running Calibration:  50%|█████     | 4/8 [09:14<09:14, 138.70s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:58,  6.23s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:50,  6.15s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:44,  6.14s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.17s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:32,  6.16s/it][A
-Running branch layer:  30%|███       | 6/20 [00:36<01:26,  6.16s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.18s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.17s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.18s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:01,  6.15s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:55,  6.17s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.17s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.19s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:37,  6.17s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.19s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.18s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:44<00:18,  6.17s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:51<00:12,  6.17s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:57<00:06,  6.11s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.11s/it][ARunning branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.16s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.63s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.73s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.69s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.68s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.65s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.68s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.68s/it]
-Running Calibration:  62%|██████▎   | 5/8 [11:33<06:56, 138.91s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:55,  6.08s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:50,  6.11s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:44,  6.14s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.14s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:32,  6.18s/it][A
-Running branch layer:  30%|███       | 6/20 [00:36<01:25,  6.14s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.17s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.17s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.19s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:01,  6.15s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:55,  6.18s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:13<00:49,  6.18s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.20s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:37,  6.17s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.19s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.21s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:44<00:18,  6.20s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:51<00:12,  6.22s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:57<00:06,  6.15s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.08s/it][ARunning branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.16s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.74s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.71s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.70s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.67s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.68s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.71s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.70s/it]
-Running Calibration:  75%|███████▌  | 6/8 [13:53<04:38, 139.08s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:55,  6.10s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:50,  6.14s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:44,  6.17s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:39,  6.19s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:32,  6.19s/it][A
-Running branch layer:  30%|███       | 6/20 [00:37<01:26,  6.20s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.17s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.20s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.18s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:02,  6.20s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:08<00:55,  6.19s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.18s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.20s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:37,  6.23s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:33<00:31,  6.26s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:39<00:24,  6.24s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:45<00:18,  6.22s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:51<00:12,  6.20s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:57<00:06,  6.19s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.16s/it][ARunning branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.19s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.69s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.68s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.69s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.71s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.74s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.71s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.71s/it]
-Running Calibration:  88%|████████▊ | 7/8 [16:13<02:19, 139.48s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:58,  6.22s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:51,  6.20s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:43,  6.10s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.13s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:32,  6.15s/it][A
-Running branch layer:  30%|███       | 6/20 [00:36<01:26,  6.17s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.19s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.18s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.19s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:01,  6.20s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:55,  6.20s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.16s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.16s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:36,  6.16s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.19s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.19s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:44<00:18,  6.15s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:51<00:12,  6.16s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:57<00:06,  6.14s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.14s/it][ARunning branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.17s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.66s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.70s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.68s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.73s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.69s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.69s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.69s/it]
-Running Calibration: 100%|██████████| 8/8 [18:33<00:00, 139.49s/it]Running Calibration: 100%|██████████| 8/8 [18:33<00:00, 139.13s/it]
-
-Conformal quantile q_hat at 90.0% coverage: 4.0165
-Running Test Set:   0%|          | 0/8 [00:00<?, ?it/s]
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:57,  6.20s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:51,  6.20s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:46,  6.25s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.17s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:32,  6.19s/it][A
-Running branch layer:  30%|███       | 6/20 [00:37<01:26,  6.21s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.20s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.21s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.19s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:01,  6.19s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:08<00:55,  6.17s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.20s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.18s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:37,  6.20s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:33<00:31,  6.22s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:39<00:24,  6.19s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:45<00:18,  6.17s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:51<00:12,  6.14s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:57<00:06,  6.16s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.14s/it][ARunning branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.18s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:12,  2.59s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.61s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:07<00:08,  2.68s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.71s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.71s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.68s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.68s/it]
-Running Test Set:  12%|█▎        | 1/8 [02:19<16:18, 139.72s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:58,  6.21s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:50,  6.16s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:44,  6.13s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.16s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:32,  6.14s/it][A
-Running branch layer:  30%|███       | 6/20 [00:37<01:26,  6.19s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.17s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.18s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:07,  6.16s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:01,  6.19s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:55,  6.17s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.21s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.20s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:37,  6.20s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.16s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.16s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:44<00:18,  6.16s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:51<00:12,  6.22s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:57<00:06,  6.21s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.22s/it][ARunning branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.19s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.64s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.65s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.72s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.68s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.67s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:15<00:00,  2.65s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:15<00:00,  2.66s/it]
-Running Test Set:  25%|██▌       | 2/8 [04:39<13:58, 139.72s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:57,  6.18s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:51,  6.20s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:45,  6.21s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:39,  6.19s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:32,  6.15s/it][A
-Running branch layer:  30%|███       | 6/20 [00:37<01:26,  6.17s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.18s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.20s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.20s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:01,  6.15s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:55,  6.18s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.16s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.16s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:36,  6.12s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.12s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.12s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:44<00:18,  6.10s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:50<00:12,  6.09s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:56<00:06,  6.10s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.14s/it][ARunning branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.15s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:12,  2.50s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.66s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:07<00:07,  2.65s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.61s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.61s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:15<00:00,  2.68s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:15<00:00,  2.65s/it]
-Running Test Set:  38%|███▊      | 3/8 [06:58<11:36, 139.36s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:54,  6.02s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:50,  6.15s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:44,  6.16s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.18s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:33,  6.21s/it][A
-Running branch layer:  30%|███       | 6/20 [00:37<01:26,  6.17s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.20s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.18s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.19s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:01,  6.16s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:55,  6.19s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.17s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:42,  6.14s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:25<00:36,  6.04s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.04s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.12s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:44<00:18,  6.12s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:50<00:12,  6.13s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:56<00:06,  6.19s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:02<00:00,  6.12s/it][ARunning branch layer: 100%|██████████| 20/20 [02:02<00:00,  6.14s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:14,  2.87s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:11,  2.77s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.72s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.69s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.67s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.73s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.72s/it]
-Running Test Set:  50%|█████     | 4/8 [09:17<09:17, 139.32s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:55,  6.07s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:49,  6.10s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:44,  6.14s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.14s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:32,  6.16s/it][A
-Running branch layer:  30%|███       | 6/20 [00:36<01:26,  6.18s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:42<01:19,  6.14s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.18s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.19s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:02,  6.21s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:07<00:55,  6.17s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.20s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.19s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:37,  6.21s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:31,  6.21s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.15s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:44<00:18,  6.16s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:51<00:12,  6.18s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:57<00:06,  6.20s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.18s/it][ARunning branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.18s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.72s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.72s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.71s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.70s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.73s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.71s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.71s/it]
-Running Test Set:  62%|██████▎   | 5/8 [11:37<06:58, 139.55s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:58,  6.24s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:51,  6.19s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:45,  6.19s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:39,  6.20s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:31<01:33,  6.22s/it][A
-Running branch layer:  30%|███       | 6/20 [00:37<01:27,  6.22s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:21,  6.24s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.21s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.22s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:02<01:02,  6.23s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:08<00:55,  6.19s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.17s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.19s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:36,  6.13s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.13s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.15s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:44<00:18,  6.08s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:50<00:12,  6.06s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:56<00:06,  6.04s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.07s/it][ARunning branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.15s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:12,  2.52s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.57s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:07<00:07,  2.58s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.67s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.66s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:15<00:00,  2.66s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:15<00:00,  2.64s/it]
-Running Test Set:  75%|███████▌  | 6/8 [13:56<04:38, 139.33s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:58,  6.22s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:51,  6.20s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:45,  6.20s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.14s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:32,  6.16s/it][A
-Running branch layer:  30%|███       | 6/20 [00:37<01:26,  6.17s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.18s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.20s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.19s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:02,  6.22s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:08<00:56,  6.23s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.19s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.17s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:36,  6.15s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.16s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.16s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:45<00:18,  6.17s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:51<00:12,  6.11s/it][A
-Running branch layer:  95%|█████████▌| 19/20 [01:57<00:06,  6.13s/it][A
-Running branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.12s/it][ARunning branch layer: 100%|██████████| 20/20 [02:03<00:00,  6.16s/it]
-
-
-Running trunk layer:   0%|          | 0/6 [00:00<?, ?it/s][A
-Running trunk layer:  17%|█▋        | 1/6 [00:02<00:13,  2.60s/it][A
-Running trunk layer:  33%|███▎      | 2/6 [00:05<00:10,  2.70s/it][A
-Running trunk layer:  50%|█████     | 3/6 [00:08<00:08,  2.69s/it][A
-Running trunk layer:  67%|██████▋   | 4/6 [00:10<00:05,  2.71s/it][A
-Running trunk layer:  83%|████████▎ | 5/6 [00:13<00:02,  2.71s/it][A/home/pmatlia/quantum-deeponet-SURF/src/quantum_layer_ideal.py:52: RuntimeWarning: divide by zero encountered in scalar divide
-  sin_product /= np.sin(params[i])
-
-Running trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.73s/it][ARunning trunk layer: 100%|██████████| 6/6 [00:16<00:00,  2.71s/it]
-Running Test Set:  88%|████████▊ | 7/8 [16:16<02:19, 139.42s/it]
-
-Running branch layer:   0%|          | 0/20 [00:00<?, ?it/s][A
-Running branch layer:   5%|▌         | 1/20 [00:06<01:55,  6.08s/it][A
-Running branch layer:  10%|█         | 2/20 [00:12<01:50,  6.13s/it][A
-Running branch layer:  15%|█▌        | 3/20 [00:18<01:44,  6.15s/it][A
-Running branch layer:  20%|██        | 4/20 [00:24<01:38,  6.17s/it][A
-Running branch layer:  25%|██▌       | 5/20 [00:30<01:33,  6.20s/it][A
-Running branch layer:  30%|███       | 6/20 [00:37<01:26,  6.19s/it][A
-Running branch layer:  35%|███▌      | 7/20 [00:43<01:20,  6.20s/it][A
-Running branch layer:  40%|████      | 8/20 [00:49<01:14,  6.21s/it][A
-Running branch layer:  45%|████▌     | 9/20 [00:55<01:08,  6.21s/it][A
-Running branch layer:  50%|█████     | 10/20 [01:01<01:02,  6.23s/it][A
-Running branch layer:  55%|█████▌    | 11/20 [01:08<00:55,  6.18s/it][A
-Running branch layer:  60%|██████    | 12/20 [01:14<00:49,  6.20s/it][A
-Running branch layer:  65%|██████▌   | 13/20 [01:20<00:43,  6.20s/it][A
-Running branch layer:  70%|███████   | 14/20 [01:26<00:37,  6.19s/it][A
-Running branch layer:  75%|███████▌  | 15/20 [01:32<00:30,  6.16s/it][A
-Running branch layer:  80%|████████  | 16/20 [01:38<00:24,  6.18s/it][A
-Running branch layer:  85%|████████▌ | 17/20 [01:45<00:18,  6.17s/it][A
-Running branch layer:  90%|█████████ | 18/20 [01:51<00:12,  6.19s/it][A                                                                                              
