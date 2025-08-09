@@ -3,19 +3,18 @@
     "data_dir": "voltage_prediction",
     "ensemble": 0,
     "ensemble_name": null,
-    "iterations": 15000,
-    "lr": 0.0005,
+    "iterations": 5000,
+    "lr": 0.01,
     "model_name": "standard_deeponet",
-    "seed": 4060916812,
+    "seed": 2309203649,
     "branch_hidden": 10,
     "trunk_hidden": 10,
     "shared_output": 10,
     "layers": [
-        100,
-        100,
-        100,
-        100,
-        100,
-        100
+        26,
+        26,
+        26,
+        26,
+        26
     ]
 }

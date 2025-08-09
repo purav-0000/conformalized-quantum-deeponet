@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Tuple, List
 
 import deepxde as dde
+import deepxde.nn.pytorch
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -52,6 +53,7 @@ def load_config(path: str) -> Config:
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
+
 # --- Utility functions ---
 
 def set_seeds(seed: int):
@@ -60,6 +62,39 @@ def set_seeds(seed: int):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+
+
+def create_decay_and_hold_scheduler(initial_lr, gamma, min_lr):
+    """
+    Scheduler that returns a multiplicative factor
+    """
+    # Calculate the minimum multiplicative factor that corresponds to the minimum LR
+    min_factor = min_lr / initial_lr
+
+    def scheduler(step):
+        # Calculate the decay factor for the current step
+        decay_factor = gamma ** step
+
+        # Return the larger of the two factors: the decayed factor or the minimum factor
+        return max(decay_factor, min_factor)
+
+    return scheduler
+
+
+class LRLogger(dde.callbacks.Callback):
+    """A callback to print the learning rate."""
+
+    def __init__(self, reps=50):
+        super().__init__()
+        # Print epoch every 'reps'
+        self.reps = reps
+
+    def on_epoch_end(self):
+        current_epoch = self.model.train_state.epoch
+
+        if current_epoch % self.reps == 0:
+            current_lr = self.model.opt.param_groups[0]['lr']
+            print(f"└─> [LR at Epoch {current_epoch}]: {current_lr:.6f}")
 
 
 # --- Training Workflow Class ---
@@ -108,7 +143,8 @@ class TrainingRunner:
 
     def _train_one_instance(self, model_dir: Path, seed: int):
         """
-        The core logic to train and save a single model instance.        """
+        The core logic to train and save a single model instance.
+        """
         set_seeds(seed)
         model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -124,17 +160,19 @@ class TrainingRunner:
         else:
             x_train, y_train = x_train_full, y_train_full
 
-        # DataHandler object transformers data, so not transformation is required
+        # DataHandler object transformers data, so no transformation is required
         x_test, y_test = self.data_handler.x_test, self.data_handler.y_test
 
         model = self._setup_dde_model(x_train, y_train, x_test, y_test)
 
+        # Create an instance of the logger for epoch 50
+        reps = 50
+        lr_logger_callback = LRLogger(reps=reps)
         # Train
-        losshistory, _ = model.train(iterations=self.config.iterations, disregard_previous_best=True)
+        losshistory, _ = model.train(iterations=self.config.iterations, disregard_previous_best=True, display_every=reps,
+                                     callbacks=[lr_logger_callback])
 
-
-        # ======================= DEBUGGING AND ERROR ANALYSIS =======================
-
+        # Debugging and error analysis
         model.net.eval()
 
         logging.info("Starting error analysis...")
@@ -188,37 +226,43 @@ class TrainingRunner:
         with torch.no_grad():
             for i in range(5):
                 index = np.random.randint(len(x_test[0]))
-                plt.plot(np.linspace(0, 1.3, len(x_test[0][index])), x_test[0][index])
-                plt.plot(x_test[1][:, 0], y_test[index])
-                plt.plot(x_test[1][:, 0], model.predict(x_test)[index])
-                # plt.savefig(f"{i}.png")
+                plt.figure(figsize=(10, 6))
+                plt.plot(x_test[1][:, 0], y_test[index], c='purple', label=f'Ground Truth (Error: {errors[index]:.2%})')
+                plt.plot(x_test[1][:, 0], y_pred[index], 'b--', label='Prediction')
+                plt.title(f""
+                          f"(Sample Index: {index})")
+                plt.legend()
+                plt.grid(True)
                 plt.show()
 
         # Plot outputs of branch to check if similar
         for i in range(10):
+            index = np.random.randint(len(x_train[0]))
             plt.plot(
-                model.net.branch(torch.tensor(x_train[0][i:i + 1], dtype=torch.float32)).detach().cpu().squeeze().numpy(),
+                model.net.branch(torch.tensor(x_train[0][index:index + 1], dtype=torch.float32)).detach().cpu().squeeze().numpy(),
                 label=f'func {i}')
         plt.title("Branch outputs per function")
         plt.legend()
         plt.savefig("Different_outputs.png")
         plt.show()
 
-        # ======================= ERROR AND DEBUGGING ANALYSIS END =======================
-
         # Save all results
         self._save_artifacts(model, losshistory, model_dir, seed)
 
 
     def _setup_dde_model(self, x_train: Tuple, y_train: np.ndarray, x_test: Tuple, y_test: np.ndarray) -> dde.Model:
-        """NEW: Encapsulates the boilerplate for setting up the DeepXDE model."""
+        """Boilerplate for setting up the DeepXDE model."""
         data = dde.data.TripleCartesianProd(X_train=x_train, y_train=y_train, X_test=x_test, y_test=y_test)
 
         # Plotting 5 random data samples to ensure correct data is being fed to the model
         for i in range(5):
-            index = np.random.randint(len(x_train[0]))
-            plt.plot(np.linspace(0, 1.3, len(x_train[0][index])), x_train[0][index])
-            plt.plot(x_train[1][:, 0], y_train[index])
+            index = np.random.randint(len(x_test[0]))
+            plt.figure(figsize=(10, 6))
+            plt.plot(np.linspace(0, 1.3, len(x_train[0][index])), x_train[0][index], 'r-', label=f'Branch input')
+            plt.plot(x_test[1][:, 0], y_train[index], 'b--', label='Ground truth')
+            plt.title(f"(Sample Index: {index})")
+            plt.legend()
+            plt.grid(True)
             plt.show()
 
 
@@ -234,34 +278,50 @@ class TrainingRunner:
             layer_sizes_branch = [m] + self.config.layers
             layer_sizes_trunk = [dim_x] + self.config.layers
 
+        # Error checking
         print("Layers for branch:", layer_sizes_branch)
         print("Layers for trunk:", layer_sizes_trunk)
 
-        # Switch to normal DeepONet for now
-        """
-        net = ResONetCartesianProd(
+        net = OrthoONetCartesianProd(
             layer_sizes_branch=layer_sizes_branch,
             layer_sizes_trunk=layer_sizes_trunk,
             activation="silu",
         )
 
-
         """
-        net = dde.nn.pytorch.DeepONetCartesianProd(
+        net = deepxde.nn.pytorch.DeepONetCartesianProd(
             layer_sizes_branch=layer_sizes_branch,
             layer_sizes_trunk=layer_sizes_trunk,
             activation="silu",
             kernel_initializer="Glorot uniform"
         )
-
+        
+        net = ResONetCartesianProd(
+            layer_sizes_branch=layer_sizes_branch,
+            layer_sizes_trunk=layer_sizes_trunk,
+            activation="silu",
+        )
+         """
 
         model = dde.Model(data, net)
 
-        model.compile("adam", lr=self.config.lr, metrics=["mean l2 relative error"])
+        # Scheduler parameters
+        # Defined for the problem, not added to config yet
+        DECAY_GAMMA = 0.993116
+        MINIMUM_LR = 1e-3
+
+        custom_scheduler_fn = create_decay_and_hold_scheduler(
+            initial_lr=self.config.lr,
+            gamma=DECAY_GAMMA,
+            min_lr=MINIMUM_LR
+        )
+        decay_schedule = ("lambda", custom_scheduler_fn)
+
+        model.compile("adam", lr=self.config.lr, metrics=["mean l2 relative error"], decay=decay_schedule)
         return model
 
     def _save_artifacts(self, model: dde.Model, losshistory, model_dir: Path, seed: int):
-        """NEW: Encapsulates all file-saving operations."""
+        """File-saving operations."""
         # Save DDE-specific files
         model.save(str(model_dir / "model_checkpoint"))
         dde.utils.external.save_loss_history(losshistory, str(model_dir / "loss_history.txt"))

@@ -54,7 +54,7 @@ class DataHandler:
         self.x_cal = (self.x_cal[0], self._add_fourier_features(self.x_cal[1]))
 
         # Normalize and transform the datasets
-        # self._normalize_and_transform()
+        self._normalize_and_transform()
 
     def _load_dataset(self):
         train = np.load((self.data_path / 'picked_aligned_train.npz'), allow_pickle=True)
@@ -92,7 +92,7 @@ class DataHandler:
         Adds data-driven Fourier features to the trunk input coordinates.
         """
         # Frequencies identified from your FFT analysis of G_train
-        dominant_freqs = [0.16, 0.64, 1.61, 1.12, 0.32, 1.77, 0.96, 1.45]
+        dominant_freqs = [0.15, 0.30, 0.59, 0.45, 0.74, 1.63]
 
         # Start with the original coordinate as the base feature
         feature_list = [trunk_input]
