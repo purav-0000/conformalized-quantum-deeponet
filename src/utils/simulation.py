@@ -46,6 +46,8 @@ def evaluate_model(y_pred: np.ndarray, y_true: np.ndarray, save_dir: Path=None, 
     else:
         y_pred_mean = y_pred
 
+    # TEMPORARY
+    # y_true = np.loadtxt('D:\Research\SURF\Quantum stuff\GitHub\quantum-deeponet-SURF\models\shot_test\simulation_output_2025-07-31_20-53.txt')
     error = np.mean(np.linalg.norm(y_pred_mean - y_true, axis=1) / np.linalg.norm(y_true, axis=1))
 
     if verbose:
@@ -67,7 +69,7 @@ def build_circuit(x_input: np.ndarray, n_in: int, n_out: int, W_gate, loader_gat
     # Optional: Analyze circuit cost against a realistic backend
     if cost_check:
 
-        t_qc = transpile(circuit, optimization_level=2, basis_gates=['cz', 'rz', 'rx', 'sx', 'x', 'rzz'])
+        t_qc = transpile(circuit, optimization_level=2, basis_gates=['ecr', 'rz', 'id', 'sx', 'x'])
 
         print(f"\n--- Realistic Circuit Cost ---")
         print(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}")
@@ -93,7 +95,7 @@ def plot_pred(
         x_test_plot: np.ndarray,
         q_hat: Optional[float] = None
 ):
-    is_ensemble = y_pred.ndim == 3  # Ensemble will have 3-dimensional output (models, batch index, output)
+    is_ensemble = y_pred.ndim == 3  # Ensemble will have 3-dimensional output (models_gilbreth, batch index, output)
     num_samples = 10
 
     indices = np.random.choice(len(y_test), size=num_samples, replace=False)
@@ -106,7 +108,7 @@ def plot_pred(
         y = y_test[idx]
 
         # Plot input function and ground truth
-        ax.plot(x_trunk_coords, x_test_plot[idx, :], color='orange', alpha=0.9, label="Input Function")
+        # ax.plot(x_trunk_coords, x_test_plot[idx, :], color='orange', alpha=0.9, label="Input Function")
         ax.plot(x_trunk_coords, y, 'r-', linewidth=2, label="Ground Truth")
 
         # Check if ensembles or single model

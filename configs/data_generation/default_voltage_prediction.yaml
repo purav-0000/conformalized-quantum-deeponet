@@ -1,0 +1,30 @@
+# Configuration for generating the voltage prediction dataset for DeepONet
+
+# --- Data Paths ---
+input_data_path: "data/data_voltage/dataset.npz" # Path to the raw dataset from the power system simulation
+output_data_dir: "data/voltage_prediction"      # Directory to save the processed .npz files
+
+# --- Raw Data Parameters ---
+# These should match the structure of the raw input_data_path file
+num_nodes: 7
+num_data_per_client: 407
+
+# --- DeepONet Data Generation Parameters ---
+n_sensors: 100        # Number of sensor points for the branch net input function (u)
+nLocs: 30             # Number of points to evaluate the output function (y)
+memory_ranging: 0.4   # Time window after fault clearing to include in the input
+max_time: 8.0         # Maximum time to consider for the output function domain
+max_clear: 0.9        # Maximum possible fault clearing time in the dataset
+
+# --- Splitting Ratios ---
+# The calibration split will be the remainder
+train_split: 0.7
+val_split: 0.1
+test_split: 0.1
+
+# --- Reproducibility and Debugging ---
+rng1: 12345           # Seed for data generation randomness (e.g., sampling locations)
+rng2: 54321           # Seed for data splitting (train/test/val shuffle)
+plot_checking_verbose: false # If true, will show plots for a few samples to verify data generation
+
+variance_filter_percentile: 1.0 # Example: Keep the 50% of samples with the lowest variance

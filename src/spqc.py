@@ -112,11 +112,13 @@ def _apply_parallel_w(circuit, n_in, n_out, thetas, addr_qr, tomo_qr):
             circuit.h([tomo_qr[c_qubit], tomo_qr[t_qubit]])
             circuit.cz(tomo_qr[c_qubit], tomo_qr[t_qubit])
 
+            # print(len(list(theta_slice[:, j].flatten())))
             ucry_c = UCRYGate(list(theta_slice[:, j].flatten()))
             ucry_t = UCRYGate(list(-theta_slice[:, j].flatten()))
 
             circuit.append(ucry_c, [tomo_qr[c_qubit]] + addr_qr[:])
             circuit.append(ucry_t, [tomo_qr[t_qubit]] + addr_qr[:])
+
 
             circuit.cz(tomo_qr[c_qubit], tomo_qr[t_qubit])
             circuit.h([tomo_qr[c_qubit], tomo_qr[t_qubit]])

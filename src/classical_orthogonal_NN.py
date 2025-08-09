@@ -31,8 +31,8 @@ class OrthoNN(dde.nn.pytorch.NN):
             x = self._input_transform(x)
 
         for i in range(len(self.layer_sizes) - 2):
-            norm = x.norm(dim=1, keepdim=True)
-            x = x / norm
+            # norm = x.norm(dim=1, keepdim=True)
+            # x = x / norm
 
             x = self.hidden_layers[i](x)
             x = (

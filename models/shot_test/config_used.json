@@ -1,0 +1,14 @@
+{
+    "bootstrap": false,
+    "data_dir": "data_ode_simple",
+    "ensemble": 0,
+    "ensemble_name": null,
+    "iterations": 30000,
+    "lr": 0.001,
+    "model_name": "shot_test",
+    "seed": 3126580418,
+    "branch_hidden": 10,
+    "trunk_hidden": 10,
+    "shared_output": 10,
+    "layers": null
+}

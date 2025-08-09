@@ -1,0 +1,38 @@
+# Default configuration for VQP data preprocessing.
+# This file corresponds to the Config dataclass in scripts/preprocess_vqp_data.py
+
+# --- Paths ---
+# NOTE: Update these paths to match your project structure.
+source_data_dir: "data/VQP"
+output_data_dir: "data/vqp_processed"
+
+# --- Data Source ---
+# Key for the input variable in the source .npz file. Can be 'V', 'Q', etc.
+input_variable_key: 'V'
+# Key for the output variable. Typically 'P' for Power.
+output_variable_key: 'P'
+
+# --- Preprocessing Hyperparameters ---
+# Time domain to work with, in seconds. Set to null or remove for the full domain.
+# Example: [0.0, 10.0]
+time_domain_limits: [0.0, 10.0]
+
+# Controls the strength of the low-pass filter. A higher value means more smoothing.
+filter_strength_divisor: 20.0
+
+# Resolution for the downsampled input signal (for the branch net).
+input_resolution: 30
+
+# Resolution for the downsampled output signal (sets the trunk net locations).
+output_resolution: 30
+
+# --- Data Split Ratios ---
+# These should sum to less than 1.0. The remainder will be the training set.
+test_split: 0.15
+calibration_split: 0.10
+validation_split: 0.15
+
+# --- Reproducibility & Debugging ---
+random_seed: 42
+# If true, saves a plot visualizing the effect of filtering and downsampling.
+plot_verbose: true

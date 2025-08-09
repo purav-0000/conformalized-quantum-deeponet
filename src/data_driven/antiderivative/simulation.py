@@ -8,6 +8,8 @@ import secrets
 from dataclasses import dataclass, field
 from typing import Optional, Tuple, List, Dict
 import re
+import subprocess
+import time
 
 import numpy as np
 import qiskit.qasm2
@@ -28,6 +30,10 @@ from src.utils.simulation import build_circuit, evaluate_model, load_weights, pl
 
 BRANCH_PREFIX = "branch"
 TRUNK_PREFIX = "trunk"
+
+# CANTOR GPU TEMP MANAGEMENT
+MAX_TEMP = 75
+CHECK_INTERVAL = 5
 
 # --- Config ---
 @dataclass
@@ -51,6 +57,18 @@ class Config:
     noise: float = 0.0
     target_gpu: int = 0
 
+# CANTOR GET GPU TEMP
+def get_gpu_temp(gpu_id=0):
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits", "-i", str(gpu_id)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True
+        )
+        temp = int(result.stdout.strip())
+        return temp
+    except Exception as e:
+        print(f"Warning: Could not get GPU temperature: {e}")
+        return None
 
 def load_config(path: str) -> Config:
     """Load configuration from a YAML file."""
@@ -238,6 +256,8 @@ class SimulationRunner:
             build_circuit(
                 inputs[0], n_in, n_out, W_gate, loader_gate, loader_inv_gate, self.simulator, cost_check=True
             )   # Analyze depth using arbitray input
+            # DUMMY OUTPUT
+            return np.zeros((len(inputs), n_out))
 
         # Noisy sim?
         is_noisy = False
@@ -247,6 +267,19 @@ class SimulationRunner:
         for i in tqdm(range(0, len(inputs), batch_size), desc="Running trunk layer" if is_trunk else "Running branch layer"):
             batch = inputs[i:i + batch_size]
 
+            # CANTOR GPU TEMP MONITORING
+            """
+            gpu_temp = get_gpu_temp(self.config.target_gpu)
+            while gpu_temp is not None and gpu_temp > MAX_TEMP:
+                # Mark the GPU as in-use
+                lock_file = f"/tmp/gpu{self.config.target_gpu}.lock"
+                with open(lock_file, "w") as f:
+                    f.write(str(os.getpid()))
+
+                print(f"GPU temp {gpu_temp}°C exceeds max {MAX_TEMP}°C, sleeping {CHECK_INTERVAL}s...")
+                time.sleep(CHECK_INTERVAL)
+                gpu_temp = get_gpu_temp(self.config.target_gpu)
+            """
             circuits = Parallel(n_jobs=self.config.n_jobs)(
                 delayed(build_circuit)(x, n_in, n_out, W_gate, loader_gate, loader_inv_gate, self.simulator, noisy=is_noisy)
                 for x in batch
@@ -262,6 +295,12 @@ class SimulationRunner:
             ]
             all_outputs.extend(batch_outputs)
 
+            # LOCK FILE FOR GPU
+            """
+            if os.path.exists("/tmp/gpu{self.config.target_gpu}.lock"):
+                os.remove("/tmp/gpu{self.config.target_gpu}.lock")
+            """
+
         print()
 
         return np.array(all_outputs)
@@ -270,6 +309,11 @@ class SimulationRunner:
                                 last_layer: bool, is_trunk: bool):
         """Processes the raw statevector from a single circuit run."""
 
+        """
+        # Ensure lock is deleted
+        if os.path.exists("/tmp/gpu{self.config.target_gpu}.lock"):
+            os.remove("/tmp/gpu{self.config.target_gpu}.lock")
+        """
         """
                 if self.config.mode == 'shots':
 
@@ -606,6 +650,8 @@ class SimulationRunner:
             self._build_spqc_circuit(
                 inputs[0], n_in, n_out, ensemble_params['hidden_thetas'], loader_gate, loader_inv_gate, cost_check=True
             )
+            # DUMMY OUTPUT
+            return np.zeros((len(inputs), len(ensemble_params['hidden_thetas']), n_out))
 
         for i in tqdm(range(0, len(inputs), batch_size), desc="Running trunk layer" if is_trunk else "Running branch layer"):
             batch = inputs[i:i + batch_size]
@@ -642,7 +688,7 @@ class SimulationRunner:
         # Optional: Analyze circuit cost against a realistic backend
         if cost_check:
 
-            t_qc = transpile(circ, optimization_level=2, basis_gates=['cz', 'rz', 'rx', 'sx', 'x', 'rzz'])
+            t_qc = transpile(circ, optimization_level=2, basis_gates=['ecr', 'rz', 'id', 'sx', 'x'])
 
             print(f"\n--- Realistic Circuit Cost ---")
             print(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}")

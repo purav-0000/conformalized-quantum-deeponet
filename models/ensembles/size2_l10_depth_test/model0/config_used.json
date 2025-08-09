@@ -1,0 +1,18 @@
+{
+    "bootstrap": false,
+    "data_dir": "data_ode_simple",
+    "ensemble": 2,
+    "ensemble_name": "size2_l10_depth_test",
+    "iterations": 1000,
+    "lr": 0.001,
+    "model_name": null,
+    "seed": 1313459554,
+    "branch_hidden": 10,
+    "trunk_hidden": 10,
+    "shared_output": 10,
+    "layers": [
+        10,
+        10,
+        10
+    ]
+}

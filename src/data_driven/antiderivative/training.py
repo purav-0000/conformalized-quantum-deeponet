@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+import inspect
 import random
 import secrets
 from dataclasses import dataclass, field
@@ -9,11 +10,13 @@ from pathlib import Path
 from typing import Optional, Tuple, List
 
 import deepxde as dde
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
 
 from src.classical_orthogonal_deeponet import OrthoONetCartesianProd
+from src.classical_res_ortho_deeponet import ResONetCartesianProd
 from src.utils.common import apply_overrides
 from src.utils.data_handling import DataHandler
 
@@ -132,6 +135,7 @@ class TrainingRunner:
         # Save all results
         self._save_artifacts(model, losshistory, model_dir, seed)
 
+
     def _setup_dde_model(self, x_train: Tuple, y_train: np.ndarray, x_test: Tuple, y_test: np.ndarray) -> dde.Model:
         """NEW: Encapsulates the boilerplate for setting up the DeepXDE model."""
         data = dde.data.TripleCartesianProd(X_train=x_train, y_train=y_train, X_test=x_test, y_test=y_test)
@@ -150,12 +154,17 @@ class TrainingRunner:
 
         print("Layers for branch:", layer_sizes_branch)
         print("Layers for trunk:", layer_sizes_trunk)
+
+        # Switch to normal DeepONet for now
+
         net = OrthoONetCartesianProd(
             layer_sizes_branch=layer_sizes_branch,
             layer_sizes_trunk=layer_sizes_trunk,
-            activation="silu"
+            activation='silu'
         )
+
         model = dde.Model(data, net)
+
         model.compile("adam", lr=self.config.lr, metrics=["mean l2 relative error"])
         return model
 

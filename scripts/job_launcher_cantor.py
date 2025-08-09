@@ -1,7 +1,9 @@
 import subprocess
 import time
 import os
+import logging
 
+from datetime import datetime
 # Max 1 process per GPU
 MAX_PROCESSES_PER_GPU = 1
 
@@ -78,19 +80,21 @@ while job_queues[0] or job_queues[1] or processes[0] or processes[1]:
         # Clean up finished processes
         processes[gpu_id] = [p for p in processes[gpu_id] if p.poll() is None]
 
-        # Launch next job if none is currently running on this GPU
-        if len(processes[gpu_id]) < MAX_PROCESSES_PER_GPU and job_queues[gpu_id]:
+        lock_file = f"/tmp/gpu{gpu_id}.lock"
+
+        # Launch next job if available
+        if len(processes[gpu_id]) < MAX_PROCESSES_PER_GPU and job_queues[gpu_id] and not os.path.exists(lock_file):
             job_str = job_queues[gpu_id].pop(0)
             cmd = BASE_CMD + job_str.split()
-            print(f"Launching on GPU {gpu_id}: {' '.join(cmd)}")
 
-            # Set up log file
-            log_file = os.path.join(log_dir, f"gpu{gpu_id}_job_{job_str.replace(' ', '_')}.out")
-            f = open(log_file, "w")
+            # Log file
+            safe_job_name = job_str.replace(' ', '_').replace('/', '_')
+            log_file_path = os.path.join(log_dir, f"gpu{gpu_id}_job_{safe_job_name}.out")
+            log_f = open(log_file_path, "w")
 
-            # Launch process
-            p = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT)
+            # Launch job
+            p = subprocess.Popen(cmd, stdout=log_f, stderr=subprocess.STDOUT)
             processes[gpu_id].append(p)
 
-    time.sleep(5)  # avoid busy waiting
+    time.sleep(5)  # avoid busy loop
 
