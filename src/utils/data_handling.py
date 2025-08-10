@@ -48,10 +48,10 @@ class DataHandler:
         self.x_cal, self.y_cal = self._load_calibration_dataset()
 
         # Add Fourier features to the trunk inputs
-        self.x_train = (self.x_train[0], self._add_fourier_features(self.x_train[1]))
-        self.x_val = (self.x_val[0], self._add_fourier_features(self.x_val[1]))
-        self.x_test = (self.x_test[0], self._add_fourier_features(self.x_test[1]))
-        self.x_cal = (self.x_cal[0], self._add_fourier_features(self.x_cal[1]))
+        # self.x_train = (self.x_train[0], self._add_fourier_features(self.x_train[1]))
+        # self.x_val = (self.x_val[0], self._add_fourier_features(self.x_val[1]))
+        # self.x_test = (self.x_test[0], self._add_fourier_features(self.x_test[1]))
+        # self.x_cal = (self.x_cal[0], self._add_fourier_features(self.x_cal[1]))
 
         # Normalize and transform the datasets
         self._normalize_and_transform()
@@ -92,7 +92,7 @@ class DataHandler:
         Adds data-driven Fourier features to the trunk input coordinates.
         """
         # Frequencies identified from your FFT analysis of G_train
-        dominant_freqs = [0.15, 0.30, 0.59, 0.45, 0.74, 1.63]
+        dominant_freqs = [0.21, 3.83, 0.64, 2.13, 1.70]
 
         # Start with the original coordinate as the base feature
         feature_list = [trunk_input]

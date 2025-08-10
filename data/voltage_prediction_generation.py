@@ -167,7 +167,7 @@ def creating_DeepONet_dataset_cartesian(train_database, clearing_time, config: C
         plt.show()
 
         # Identify and log the top 5 dominant frequencies (excluding the DC component)
-        top_indices = np.argsort(average_power_spectrum[1:])[-10:][::-1] + 1
+        top_indices = np.argsort(average_power_spectrum[1:])[-15:][::-1] + 1
         dominant_frequencies = frequencies[top_indices]
         dominant_powers = average_power_spectrum[top_indices]
 
@@ -289,7 +289,6 @@ def run_generation(config: Config):
         "test": shuffled_indices[val_end:test_end],
         "calibration": shuffled_indices[test_end:],
     }
-
 
     X1_shared_trunk = y_data.astype(np.float32)
 

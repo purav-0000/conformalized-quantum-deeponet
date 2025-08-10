@@ -14,14 +14,21 @@ import deepxde.nn.activations as activations
 from src.classical_orthogonal_layer import OrthoLayer
 
 class ResOrthoNN(dde.nn.pytorch.NN): 
-    def __init__(self, layer_sizes, activation):  #e.g. [3,4,5,1] need data pre-processing
+    def __init__(self, layer_sizes, activation, dropout_rate=0.1):  #e.g. [3,4,5,1] need data pre-processing
         super().__init__()
         # determine the activation function
         self.activation = activations.get(activation)
         self.layer_sizes = layer_sizes
         self.hidden_layers= torch.nn.ModuleList()
+        # self.dropout_rate = dropout_rate # ADDED: Store dropout_rate
+
+        # ADDED: Create a separate ModuleList for dropout layers
+        # self.dropouts = torch.nn.ModuleList()
+
         for i in range(len(layer_sizes)-2):
             self.hidden_layers.append(OrthoLayer(layer_sizes[i],layer_sizes[i+1]))
+            # ADDED: Append a dropout layer for each hidden layer
+            # self.dropouts.append(torch.nn.Dropout(p=self.dropout_rate))
         self.output_layer = torch.nn.Linear(layer_sizes[-2],layer_sizes[-1])        
     
     def forward(self,inputs):
@@ -38,6 +45,9 @@ class ResOrthoNN(dde.nn.pytorch.NN):
                 x = self.activation(self.hidden_layers[i](x))
             else:
                 x =  self.activation(self.hidden_layers[i](x))+x
+
+            # ADDED: Apply dropout after activation
+            # x = self.dropouts[i](x)
         
         #res = x    
         x = self.output_layer(x) 
@@ -104,6 +114,12 @@ class ResNN(dde.nn.pytorch.NN):
         self.activation = activations.get(activation)
         self.layer_sizes = layer_sizes
         self.hidden_layers= torch.nn.ModuleList()
+
+        # self.dropout_rate = dropout_rate  # ADDED: Store dropout_rate
+
+        # ADDED: Create a separate ModuleList for dropout layers
+        # self.dropouts = torch.nn.ModuleList()
+
         for i in range(len(layer_sizes)-2):
             self.hidden_layers.append(torch.nn.Linear(layer_sizes[i],layer_sizes[i+1]))
         self.output_layer = torch.nn.Linear(layer_sizes[-2],layer_sizes[-1])        
@@ -123,6 +139,9 @@ class ResNN(dde.nn.pytorch.NN):
                 x = self.activation(self.hidden_layers[i](x))
             else:
                 x =  self.activation(self.hidden_layers[i](x))+x
+
+            # ADDED: Append a dropout layer for each hidden layer
+            # self.dropouts.append(torch.nn.Dropout(p=self.dropout_rate))
         
         #res = x    
         x = self.output_layer(x) 

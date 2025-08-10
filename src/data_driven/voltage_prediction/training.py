@@ -17,7 +17,7 @@ import torch
 import yaml
 
 from src.classical_orthogonal_deeponet import OrthoONetCartesianProd
-from src.classical_res_ortho_deeponet import ResONetCartesianProd
+from src.classical_res_ortho_deeponet import ResONetCartesianProd, ResOrthoONetCartesianProd
 from src.utils.common import apply_overrides
 from src.utils.data_handling import DataHandler
 
@@ -236,7 +236,7 @@ class TrainingRunner:
                 plt.show()
 
         # Plot outputs of branch to check if similar
-        for i in range(10):
+        for i in range(20):
             index = np.random.randint(len(x_train[0]))
             plt.plot(
                 model.net.branch(torch.tensor(x_train[0][index:index + 1], dtype=torch.float32)).detach().cpu().squeeze().numpy(),
@@ -258,13 +258,12 @@ class TrainingRunner:
         for i in range(5):
             index = np.random.randint(len(x_test[0]))
             plt.figure(figsize=(10, 6))
-            plt.plot(np.linspace(0, 1.3, len(x_train[0][index])), x_train[0][index], 'r-', label=f'Branch input')
+            plt.plot(np.linspace(0, 2.0, len(x_train[0][index])), x_train[0][index], 'r-', label=f'Branch input')
             plt.plot(x_test[1][:, 0], y_train[index], 'b--', label='Ground truth')
             plt.title(f"(Sample Index: {index})")
             plt.legend()
             plt.grid(True)
             plt.show()
-
 
         m = x_train[0].shape[1]
         dim_x = x_train[1].shape[1]
@@ -282,7 +281,8 @@ class TrainingRunner:
         print("Layers for branch:", layer_sizes_branch)
         print("Layers for trunk:", layer_sizes_trunk)
 
-        net = OrthoONetCartesianProd(
+
+        net = ResOrthoONetCartesianProd(
             layer_sizes_branch=layer_sizes_branch,
             layer_sizes_trunk=layer_sizes_trunk,
             activation="silu",
@@ -295,20 +295,20 @@ class TrainingRunner:
             activation="silu",
             kernel_initializer="Glorot uniform"
         )
+
         
         net = ResONetCartesianProd(
             layer_sizes_branch=layer_sizes_branch,
             layer_sizes_trunk=layer_sizes_trunk,
             activation="silu",
         )
-         """
-
+        """
         model = dde.Model(data, net)
 
         # Scheduler parameters
         # Defined for the problem, not added to config yet
-        DECAY_GAMMA = 0.993116
-        MINIMUM_LR = 1e-3
+        DECAY_GAMMA = 0.998
+        MINIMUM_LR = 3e-3
 
         custom_scheduler_fn = create_decay_and_hold_scheduler(
             initial_lr=self.config.lr,
