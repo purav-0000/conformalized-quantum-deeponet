@@ -1,24 +1,24 @@
-  # Data Paths
-  input_data_path: "data/raw_data/voltage_dataset.npz"
-  output_data_dir: "data/processed_data/online_voltage"
+# Data Paths
+input_data_path: "data/raw_data/voltage_dataset.npz"
+output_data_dir: "data/processed_data/online_voltage"
 
-  # Raw Data Parameters
-  num_nodes: 7
-  num_data_per_client: 407
+# Raw Data Parameters
+num_nodes: 7
+num_data_per_client: 407
 
-  # Data Parameters
-  memory_window_size: 15  # Number of past time steps to use as input (tau)
-  prediction_horizon: 1  # Number of future time steps to predict (fixed at 1 for t+1)
-  max_time: 8.0
+# Data Parameters
+memory_window_size: 15  # Number of past time steps to use as input (tau)
+prediction_horizon: 1  # Number of future time steps to predict (fixed at 1 for t+1)
+max_time: 8.0
 
-  # Splitting Ratios
-  train_split: 0.8
-  cal_split: 0.1
-  test_split: 0.1
+# Splitting Ratios
+train_split: 0.8
+cal_split: 0.1
+test_split: 0.1
 
-  # Reproducibility and Debugging
-  seed: null
-  verbose: true
+# Reproducibility and Debugging
+seed: null
+verbose: true
 
-  # Filters dataset based on the variance of the *entire* signal before windowing
-  variance_filter_percentile: 1.0
+# Filters dataset based on the variance of the *entire* signal before windowing
+variance_filter_percentile: 1.0

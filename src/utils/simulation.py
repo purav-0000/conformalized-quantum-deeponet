@@ -101,6 +101,7 @@ def plot_pred(
 
     # Select trunk inputs
     x_trunk_coords = x_test[1][:, 0]
+
     for ax, idx in zip(axs, indices):
 
         y = y_test[idx]
@@ -167,6 +168,10 @@ def plot_pred(
 
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    plt.savefig(output_dir / f"simulation_plots/predictions_plot_{timestamp}.png")
+
+    plot_dir = output_dir / "simulation_plots"
+    output_path = plot_dir / f"predictions_plot_{timestamp}.png"
+    os.makedirs(plot_dir, exist_ok=True)
+    plt.savefig(output_path)
     plt.close()
 

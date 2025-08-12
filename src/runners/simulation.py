@@ -145,8 +145,8 @@ class SimulationRunner:
 
         y_pred = self._run_model(model_path, self.data_handler.x_test)
 
-        evaluate_model(y_pred, self.data_handler.y_test, self.output_dir, verbose=True)
         os.makedirs(self.output_dir / "simulation_plots", exist_ok=True)
+        evaluate_model(y_pred, self.data_handler.y_test, self.output_dir, verbose=True)
         plot_pred(
             self.data_handler.x_test, self.data_handler.y_test, y_pred,
             self.output_dir, self.data_handler.x_test_plot

@@ -38,7 +38,7 @@ def create_decay_and_hold_scheduler(initial_lr: float, gamma: float, min_lr: flo
     return scheduler
 
 
-def model_input_plotting(x_train: np.ndarray, y_train: np.ndarray, model_dir: Path, x_train_plot: np.ndarray):
+def model_input_plotting(x_train, y_train: np.ndarray, model_dir: Path, x_train_plot: np.ndarray):
     """Check data being fed to model"""
     for i in range(3):
         index = np.random.randint(len(x_train[0]))

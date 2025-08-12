@@ -18,6 +18,7 @@ classical_branch: false
 classical_trunk: false
 noise: 0.0
 target_gpu: 0
+residual: true
 
 # Seed and debugging
 analyze_circuit_cost: false

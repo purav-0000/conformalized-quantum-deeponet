@@ -113,7 +113,9 @@ class ResOrthoONetCartesianProd(dde.nn.pytorch.NN):
 
         # Add bias
         x += self.b
-        return x
+
+        # Batch-to-batch einsum is flattening the array I think
+        return x if not self.online else x.reshape(-1, 1)
 
 class ResNN(dde.nn.pytorch.NN): 
     def __init__(self, layer_sizes, activation):  #e.g. [3,4,5,1] need data pre-processing
@@ -206,5 +208,7 @@ class ResONetCartesianProd(dde.nn.pytorch.NN):
 
         # Add bias
         x += self.b
-        return x
+
+        # Batch-to-batch einsum is flattening the array I think
+        return x if not self.online else x.reshape(-1, 1)
     

@@ -1,0 +1,25 @@
+{
+    "bootstrap": false,
+    "data_dir": "online_voltage",
+    "fourier_features": true,
+    "model_name": null,
+    "ensemble": 0,
+    "ensemble_name": null,
+    "iterations": 2500,
+    "lr": 0.01,
+    "display_every": 250,
+    "model_type": "ResOrthoONet",
+    "batch_size": 512,
+    "online": true,
+    "layers": [
+        20,
+        20,
+        20,
+        20,
+        20
+    ],
+    "decay_gamma": 0.998,
+    "minimum_lr": 0.003,
+    "seed": 73928412,
+    "verbose": true
+}
