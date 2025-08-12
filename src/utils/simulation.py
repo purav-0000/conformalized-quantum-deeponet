@@ -97,7 +97,7 @@ def plot_pred(
     num_samples = 10
 
     indices = np.random.choice(len(y_test), size=num_samples, replace=False)
-    fig, axs = plt.subplots(num_samples, 1, figsize=(12, 6 * num_samples), sharex=True, sharey=True)
+    fig, axs = plt.subplots(num_samples, 1, figsize=(12, 6 * num_samples))
 
     # Select trunk inputs
     x_trunk_coords = x_test[1][:, 0]
