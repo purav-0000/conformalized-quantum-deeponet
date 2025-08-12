@@ -1,0 +1,26 @@
+# Data Paths
+input_data_path: "data/raw_data/voltage_dataset.npz"
+output_data_dir: "data/processed_data/offline_voltage"
+
+# Raw Data Parameters
+num_nodes: 7
+num_data_per_client: 407
+
+# DeepONet Data Generation Parameters
+n_sensors: 20
+nLocs: 40
+memory_ranging: 1.1
+max_time: 8.0
+max_clear: 0.9
+
+# Splitting Ratios
+train_split: 0.8
+cal_split: 0.1
+test_split: 0.1
+
+# Reproducibility and Debugging
+rng1: null
+rng2: null
+verbose: false
+
+variance_filter_percentile: 1.0   # Example: Keep the 50% of samples with the lowest variance

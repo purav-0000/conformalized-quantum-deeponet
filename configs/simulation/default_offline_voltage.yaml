@@ -1,0 +1,23 @@
+# Data options
+data_dir: offline_voltage
+fourier_features: true
+
+# Pick model/ensemble
+model: null
+ensemble: null
+
+# Simulation parameters
+n_jobs: 4
+simulator: CPU
+mode: ideal   # or 'shots'
+shots: 0
+batch_size: null
+coverage: 0.9
+spqc: false
+classical_branch: false
+classical_trunk: false
+noise: 0.0
+target_gpu: 0
+
+# Seed and debugging
+analyze_circuit_cost: false

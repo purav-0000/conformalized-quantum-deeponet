@@ -1,0 +1,23 @@
+# Paths
+source_data_dir: "data/raw_data/load"
+output_data_dir: "data/processed_data/offline_load"
+
+# Data Source
+input_variable_key: 'V'
+output_variable_key: 'P'
+
+# Preprocessing Hyperparameters
+# None sets to full domain
+time_domain_limits: [0.0, 10.0]
+filter_strength_divisor: 50.0
+input_resolution: 20
+output_resolution: 40
+
+# Splitting Ratios
+train_split: 0.8
+cal_split: 0.1
+test_split: 0.1
+
+# Reproducibility & Debugging
+random_seed: null
+verbose: True

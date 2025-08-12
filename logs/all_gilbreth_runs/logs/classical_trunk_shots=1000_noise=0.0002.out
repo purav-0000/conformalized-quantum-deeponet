@@ -1,130 +1,0 @@
-Using backend: pytorch
-Other supported backends: tensorflow.compat.v1, tensorflow, jax, paddle.
-paddle supports more examples now and is recommended.
-Noise level:  0.0002
-Results for this run will be saved in: models/ensembles/deterministic_4
---- Running in Sequential Ensemble Mode ---
-Found 4 models in ensemble: deterministic_4
-Running Calibration:   0%|          | 0/4 [00:00<?, ?it/s]
-Running branch layer:   0%|          | 0/12 [00:00<?, ?it/s][A
-Running branch layer:   8%|▊         | 1/12 [00:07<01:20,  7.35s/it][A
-Running branch layer:  17%|█▋        | 2/12 [00:11<00:55,  5.57s/it][A
-Running branch layer:  25%|██▌       | 3/12 [00:13<00:36,  4.05s/it][A
-Running branch layer:  33%|███▎      | 4/12 [00:16<00:27,  3.38s/it][A
-Running branch layer:  42%|████▏     | 5/12 [00:18<00:20,  3.00s/it][A
-Running branch layer:  50%|█████     | 6/12 [00:20<00:16,  2.80s/it][A
-Running branch layer:  58%|█████▊    | 7/12 [00:23<00:13,  2.64s/it][A
-Running branch layer:  67%|██████▋   | 8/12 [00:25<00:10,  2.61s/it][A
-Running branch layer:  75%|███████▌  | 9/12 [00:28<00:07,  2.54s/it][A
-Running branch layer:  83%|████████▎ | 10/12 [00:30<00:04,  2.49s/it][A
-Running branch layer:  92%|█████████▏| 11/12 [00:32<00:02,  2.45s/it][A
-Running branch layer: 100%|██████████| 12/12 [00:35<00:00,  2.39s/it][ARunning branch layer: 100%|██████████| 12/12 [00:35<00:00,  2.93s/it]
-Running Calibration:  25%|██▌       | 1/4 [00:35<01:46, 35.37s/it]
-
-Running branch layer:   0%|          | 0/12 [00:00<?, ?it/s][A
-Running branch layer:   8%|▊         | 1/12 [00:02<00:25,  2.36s/it][A
-Running branch layer:  17%|█▋        | 2/12 [00:04<00:23,  2.36s/it][A
-Running branch layer:  25%|██▌       | 3/12 [00:07<00:21,  2.42s/it][A
-Running branch layer:  33%|███▎      | 4/12 [00:09<00:19,  2.41s/it][A
-Running branch layer:  42%|████▏     | 5/12 [00:12<00:16,  2.41s/it][A
-Running branch layer:  50%|█████     | 6/12 [00:14<00:14,  2.38s/it][A
-Running branch layer:  58%|█████▊    | 7/12 [00:16<00:11,  2.39s/it][A
-Running branch layer:  67%|██████▋   | 8/12 [00:19<00:09,  2.43s/it][A
-Running branch layer:  75%|███████▌  | 9/12 [00:21<00:07,  2.44s/it][A
-Running branch layer:  83%|████████▎ | 10/12 [00:24<00:04,  2.41s/it][A
-Running branch layer:  92%|█████████▏| 11/12 [00:26<00:02,  2.39s/it][A
-Running branch layer: 100%|██████████| 12/12 [00:28<00:00,  2.38s/it][ARunning branch layer: 100%|██████████| 12/12 [00:28<00:00,  2.40s/it]
-Running Calibration:  50%|█████     | 2/4 [01:04<01:03, 31.57s/it]
-
-Running branch layer:   0%|          | 0/12 [00:00<?, ?it/s][A
-Running branch layer:   8%|▊         | 1/12 [00:02<00:24,  2.23s/it][A
-Running branch layer:  17%|█▋        | 2/12 [00:04<00:23,  2.31s/it][A
-Running branch layer:  25%|██▌       | 3/12 [00:06<00:21,  2.35s/it][A
-Running branch layer:  33%|███▎      | 4/12 [00:09<00:19,  2.42s/it][A
-Running branch layer:  42%|████▏     | 5/12 [00:11<00:17,  2.44s/it][A
-Running branch layer:  50%|█████     | 6/12 [00:14<00:14,  2.42s/it][A
-Running branch layer:  58%|█████▊    | 7/12 [00:16<00:11,  2.39s/it][A
-Running branch layer:  67%|██████▋   | 8/12 [00:19<00:09,  2.37s/it][A
-Running branch layer:  75%|███████▌  | 9/12 [00:21<00:06,  2.33s/it][A
-Running branch layer:  83%|████████▎ | 10/12 [00:23<00:04,  2.37s/it][A
-Running branch layer:  92%|█████████▏| 11/12 [00:26<00:02,  2.46s/it][A
-Running branch layer: 100%|██████████| 12/12 [00:28<00:00,  2.45s/it][ARunning branch layer: 100%|██████████| 12/12 [00:28<00:00,  2.40s/it]
-Running Calibration:  75%|███████▌  | 3/4 [01:33<00:30, 30.34s/it]
-
-Running branch layer:   0%|          | 0/12 [00:00<?, ?it/s][A
-Running branch layer:   8%|▊         | 1/12 [00:02<00:24,  2.24s/it][A
-Running branch layer:  17%|█▋        | 2/12 [00:04<00:23,  2.31s/it][A
-Running branch layer:  25%|██▌       | 3/12 [00:06<00:20,  2.33s/it][A
-Running branch layer:  33%|███▎      | 4/12 [00:09<00:19,  2.38s/it][A
-Running branch layer:  42%|████▏     | 5/12 [00:11<00:17,  2.43s/it][A
-Running branch layer:  50%|█████     | 6/12 [00:14<00:14,  2.43s/it][A
-Running branch layer:  58%|█████▊    | 7/12 [00:16<00:12,  2.41s/it][A
-Running branch layer:  67%|██████▋   | 8/12 [00:19<00:09,  2.38s/it][A
-Running branch layer:  75%|███████▌  | 9/12 [00:21<00:07,  2.38s/it][A
-Running branch layer:  83%|████████▎ | 10/12 [00:23<00:04,  2.35s/it][A
-Running branch layer:  92%|█████████▏| 11/12 [00:26<00:02,  2.39s/it][A
-Running branch layer: 100%|██████████| 12/12 [00:28<00:00,  2.45s/it][ARunning branch layer: 100%|██████████| 12/12 [00:28<00:00,  2.40s/it]
-Running Calibration: 100%|██████████| 4/4 [02:01<00:00, 29.74s/it]Running Calibration: 100%|██████████| 4/4 [02:01<00:00, 30.50s/it]
-
-Conformal quantile q_hat at 90.0% coverage: 1.3927
-Running Test Set:   0%|          | 0/4 [00:00<?, ?it/s]
-Running branch layer:   0%|          | 0/10 [00:00<?, ?it/s][A
-Running branch layer:  10%|█         | 1/10 [00:02<00:21,  2.39s/it][A
-Running branch layer:  20%|██        | 2/10 [00:04<00:18,  2.37s/it][A
-Running branch layer:  30%|███       | 3/10 [00:06<00:16,  2.30s/it][A
-Running branch layer:  40%|████      | 4/10 [00:09<00:14,  2.35s/it][A
-Running branch layer:  50%|█████     | 5/10 [00:11<00:11,  2.37s/it][A
-Running branch layer:  60%|██████    | 6/10 [00:14<00:09,  2.42s/it][A
-Running branch layer:  70%|███████   | 7/10 [00:16<00:07,  2.42s/it][A
-Running branch layer:  80%|████████  | 8/10 [00:19<00:04,  2.40s/it][A
-Running branch layer:  90%|█████████ | 9/10 [00:21<00:02,  2.38s/it][A
-Running branch layer: 100%|██████████| 10/10 [00:23<00:00,  2.40s/it][ARunning branch layer: 100%|██████████| 10/10 [00:23<00:00,  2.39s/it]
-Running Test Set:  25%|██▌       | 1/4 [00:23<01:11, 23.92s/it]
-
-Running branch layer:   0%|          | 0/10 [00:00<?, ?it/s][A
-Running branch layer:  10%|█         | 1/10 [00:02<00:21,  2.40s/it][A
-Running branch layer:  20%|██        | 2/10 [00:04<00:19,  2.38s/it][A
-Running branch layer:  30%|███       | 3/10 [00:07<00:17,  2.45s/it][A
-Running branch layer:  40%|████      | 4/10 [00:09<00:14,  2.42s/it][A
-Running branch layer:  50%|█████     | 5/10 [00:12<00:11,  2.39s/it][A
-Running branch layer:  60%|██████    | 6/10 [00:14<00:09,  2.34s/it][A
-Running branch layer:  70%|███████   | 7/10 [00:16<00:07,  2.39s/it][A
-Running branch layer:  80%|████████  | 8/10 [00:19<00:04,  2.39s/it][A
-Running branch layer:  90%|█████████ | 9/10 [00:21<00:02,  2.44s/it][A
-Running branch layer: 100%|██████████| 10/10 [00:23<00:00,  2.39s/it][ARunning branch layer: 100%|██████████| 10/10 [00:23<00:00,  2.40s/it]
-Running Test Set:  50%|█████     | 2/4 [00:47<00:47, 23.98s/it]
-
-Running branch layer:   0%|          | 0/10 [00:00<?, ?it/s][A
-Running branch layer:  10%|█         | 1/10 [00:02<00:20,  2.30s/it][A
-Running branch layer:  20%|██        | 2/10 [00:04<00:18,  2.32s/it][A
-Running branch layer:  30%|███       | 3/10 [00:07<00:16,  2.38s/it][A
-Running branch layer:  40%|████      | 4/10 [00:09<00:14,  2.37s/it][A
-Running branch layer:  50%|█████     | 5/10 [00:11<00:11,  2.39s/it][A
-Running branch layer:  60%|██████    | 6/10 [00:14<00:09,  2.40s/it][A
-Running branch layer:  70%|███████   | 7/10 [00:16<00:07,  2.42s/it][A
-Running branch layer:  80%|████████  | 8/10 [00:19<00:04,  2.40s/it][A
-Running branch layer:  90%|█████████ | 9/10 [00:21<00:02,  2.42s/it][A
-Running branch layer: 100%|██████████| 10/10 [00:23<00:00,  2.36s/it][ARunning branch layer: 100%|██████████| 10/10 [00:23<00:00,  2.38s/it]
-Running Test Set:  75%|███████▌  | 3/4 [01:11<00:23, 23.96s/it]
-
-Running branch layer:   0%|          | 0/10 [00:00<?, ?it/s][A
-Running branch layer:  10%|█         | 1/10 [00:02<00:21,  2.42s/it][A
-Running branch layer:  20%|██        | 2/10 [00:04<00:19,  2.43s/it][A
-Running branch layer:  30%|███       | 3/10 [00:07<00:17,  2.45s/it][A
-Running branch layer:  40%|████      | 4/10 [00:09<00:14,  2.45s/it][A
-Running branch layer:  50%|█████     | 5/10 [00:12<00:11,  2.40s/it][A
-Running branch layer:  60%|██████    | 6/10 [00:14<00:09,  2.40s/it][A
-Running branch layer:  70%|███████   | 7/10 [00:16<00:07,  2.40s/it][A
-Running branch layer:  80%|████████  | 8/10 [00:19<00:04,  2.39s/it][A
-Running branch layer:  90%|█████████ | 9/10 [00:21<00:02,  2.42s/it][A
-Running branch layer: 100%|██████████| 10/10 [00:24<00:00,  2.42s/it][ARunning branch layer: 100%|██████████| 10/10 [00:24<00:00,  2.42s/it]
-Running Test Set: 100%|██████████| 4/4 [01:36<00:00, 24.06s/it]Running Test Set: 100%|██████████| 4/4 [01:36<00:00, 24.03s/it]
-
---- Stats ---
-Mean Relative L2 Error: 0.192504
-Average width: 0.150793
-Max width: 0.540585
-Avg covariance: 0.294450
-Coverage: 93.866667
-
-Simulation finished.

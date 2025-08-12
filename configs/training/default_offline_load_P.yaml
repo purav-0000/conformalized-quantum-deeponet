@@ -1,0 +1,27 @@
+# Data options
+bootstrap: false
+data_dir: offline_load_P
+fourier_features: false
+
+# Model/ensemble options
+model_name: null
+ensemble: 0
+ensemble_name: null
+
+# Training hyperparamters
+iterations: 2500
+lr: 0.01
+display_every: 250
+model_type: "ResOrthoONet"
+batch_size: 512
+online: false
+
+# Layer sizes
+# Note: For overrides, enter layers as layers=10,10 not layers=[10, 10]
+layers: [20, 20, 20, 20, 20]
+
+# Scheduler
+decay_gamma: 0.9996
+minimum_lr: 0.00005
+
+verbose: true

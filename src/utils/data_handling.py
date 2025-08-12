@@ -1,5 +1,5 @@
 # utils/data_handling.py
-
+import logging
 import numpy as np
 import os
 from pathlib import Path
@@ -18,9 +18,9 @@ def transform_input(x, min_val, max_val):
     return np.concatenate((x, x_d1), axis=1, dtype=np.float32)
 
 
-def normalize_bounds(x_train, x_test, x_val, x_cal):
+def normalize_bounds(x_train, x_test, x_cal):
     def get_min_max(idx):
-        arrays = [x_train[idx], x_test[idx], x_val[idx], x_cal[idx]]
+        arrays = [x_train[idx], x_test[idx], x_cal[idx]]
         concatenated = np.concatenate(arrays, axis=0)
         return np.min(concatenated, axis=0), np.max(concatenated, axis=0)
 
@@ -38,45 +38,42 @@ def normalize_bounds(x_train, x_test, x_val, x_cal):
 class DataHandler:
     """A class to handle loading and preprocessing of simulation datasets."""
 
-    def __init__(self, data_dir: str):
-        self.data_path = Path("data") / data_dir
+    def __init__(self, data_dir: str, fourier_features: bool):
+        self.data_path = Path("data/processed_data") / data_dir
+        self.fourier_features = fourier_features
+
         if not self.data_path.exists():
             raise FileNotFoundError(f"Data directory not found: {self.data_path}")
 
         # Load all datasets at initialization
-        self.x_train, self.y_train, self.x_val, self.y_val, self.x_test, self.y_test, self.x_test_plot = self._load_dataset()
-        self.x_cal, self.y_cal = self._load_calibration_dataset()
+        (self.x_train, self.y_train, self.x_cal, self.y_cal, self.x_test, self.y_test,
+         self.x_train_plot, _, self.x_test_plot) = self._load_dataset()
 
         # Add Fourier features to the trunk inputs
-        # self.x_train = (self.x_train[0], self._add_fourier_features(self.x_train[1]))
-        # self.x_val = (self.x_val[0], self._add_fourier_features(self.x_val[1]))
-        # self.x_test = (self.x_test[0], self._add_fourier_features(self.x_test[1]))
-        # self.x_cal = (self.x_cal[0], self._add_fourier_features(self.x_cal[1]))
+        if self.fourier_features:
+            self.dominant_freqs = self.fourier_decomposition()
+            self.x_train = (self.x_train[0], self._add_fourier_features(self.x_train[1]))
+            self.x_test = (self.x_test[0], self._add_fourier_features(self.x_test[1]))
+            self.x_cal = (self.x_cal[0], self._add_fourier_features(self.x_cal[1]))
 
         # Normalize and transform the datasets
         self._normalize_and_transform()
 
     def _load_dataset(self):
-        train = np.load((self.data_path / 'picked_aligned_train.npz'), allow_pickle=True)
-        val = np.load((self.data_path / 'picked_aligned_val.npz'), allow_pickle=True)
-        test = np.load((self.data_path / 'picked_aligned_test.npz'), allow_pickle=True)
+        train = np.load((self.data_path / 'train.npz'), allow_pickle=True)
+        cal = np.load((self.data_path / 'calibration.npz'), allow_pickle=True)
+        test = np.load((self.data_path / 'test.npz'), allow_pickle=True)
 
         return (train['X0'].astype(np.float32), train['X1'].astype(np.float32)), train['y'].astype(np.float32), \
-            (val['X0'].astype(np.float32), val['X1'].astype(np.float32)), val['y'].astype(np.float32), \
+            (cal['X0'].astype(np.float32), cal['X1'].astype(np.float32)), cal['y'].astype(np.float32), \
             (test['X0'].astype(np.float32), test['X1'].astype(np.float32)), test['y'].astype(np.float32), \
-            test['X0_plot'].astype(np.float32)
-
-    def _load_calibration_dataset(self):
-        cal = np.load((self.data_path / 'picked_aligned_calibration.npz'), allow_pickle=True)
-
-        return (cal['X0'].astype(np.float32), cal['X1'].astype(np.float32)), cal['y'].astype(np.float32)
+            train['X0_plot'].astype(np.float32), cal['X0_plot'].astype(np.float32), test['X0_plot'].astype(np.float32)
 
     def _normalize_and_transform(self):
         """Calculates bounds and applies transformations."""
-        self.bounds = normalize_bounds(self.x_train, self.x_test, self.x_val, self.x_cal)
+        self.bounds = normalize_bounds(self.x_train, self.x_test, self.x_cal)
 
         self.x_train = self._transform_split_input(self.x_train)
-        self.x_val = self._transform_split_input(self.x_val)
         self.x_test = self._transform_split_input(self.x_test)
         self.x_cal = self._transform_split_input(self.x_cal)
 
@@ -84,31 +81,52 @@ class DataHandler:
         """Applies transformation to a split (branch, trunk) input."""
         branch_transformed = transform_input(x_split[0], self.bounds["branch_min"], self.bounds["branch_max"])
         trunk_transformed = transform_input(x_split[1], self.bounds["trunk_min"], self.bounds["trunk_max"])
-        return (branch_transformed, trunk_transformed)
+        return branch_transformed, trunk_transformed
+
+    def fourier_decomposition(self):
+        num_signals, n_locs = self.y_train.shape
+
+        # Determine frequencies from training set
+        sampling_interval = self.x_train[1][1, 0] - self.x_train[1][0, 0]
+
+        # Calculate the frequencies corresponding to the FFT output
+        # We only need the positive frequencies for the one-sided power spectrum
+        frequencies = np.fft.fftfreq(n_locs, d=sampling_interval)[:n_locs // 2]
+
+        # Accumulate power spectra from all signals
+        total_power_spectrum = np.zeros(n_locs // 2)
+        for i in range(num_signals):
+            signal = self.y_train[i, :]
+            fft_values = np.fft.fft(signal)
+            # Compute power (squared magnitude) for positive frequencies
+            power = np.abs(fft_values[0:n_locs // 2]) ** 2
+            total_power_spectrum += power
+
+        # Average the power spectrum across all signals
+        average_power_spectrum = total_power_spectrum / num_signals
+
+        # Identify the top 5 dominant frequencies (excluding the DC component)
+        top_indices = np.argsort(average_power_spectrum[1:])[-5:][::-1] + 1
+        dominant_freqs = frequencies[top_indices]
+
+        logging.info(f"Top identified frequencues: {dominant_freqs}")
+
+        return dominant_freqs
 
     def _add_fourier_features(self, trunk_input: np.ndarray) -> np.ndarray:
         """Adds Fourier features to the trunk input coordinates."""
-        """
-        Adds data-driven Fourier features to the trunk input coordinates.
-        """
-        # Frequencies identified from your FFT analysis of G_train
-        dominant_freqs = [0.21, 3.83, 0.64, 2.13, 1.70]
 
         # Start with the original coordinate as the base feature
         feature_list = [trunk_input]
-        # feature_list = []
 
         # Add sine and cosine pairs for each dominant frequency
-        for f in dominant_freqs:
-            # The argument for the trig functions is omega*t = 2*pi*f*t
+        for f in self.dominant_freqs:
             omega_t = 2 * np.pi * f * trunk_input
             feature_list.append(np.cos(omega_t))
             feature_list.append(np.sin(omega_t))
 
         # Concatenate all features into a single array
-        # The final shape will be (nLocs, 1 + 2 * len(dominant_freqs))
         augmented_trunk_input = np.concatenate(feature_list, axis=1)
 
         return augmented_trunk_input.astype(np.float32)
-
 

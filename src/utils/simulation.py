@@ -8,7 +8,7 @@ from pathlib import Path
 from qiskit import transpile
 from typing import Optional, Tuple
 
-from src.quantum_layer_ideal import custom_tomo_fast
+from src.model_definition.quantum_layer_ideal import custom_tomo_fast
 
 
 def silu(x: np.ndarray) -> np.ndarray:
@@ -46,8 +46,6 @@ def evaluate_model(y_pred: np.ndarray, y_true: np.ndarray, save_dir: Path=None, 
     else:
         y_pred_mean = y_pred
 
-    # TEMPORARY
-    # y_true = np.loadtxt('D:\Research\SURF\Quantum stuff\GitHub\quantum-deeponet-SURF\models\shot_test\simulation_output_2025-07-31_20-53.txt')
     error = np.mean(np.linalg.norm(y_pred_mean - y_true, axis=1) / np.linalg.norm(y_true, axis=1))
 
     if verbose:
@@ -95,11 +93,11 @@ def plot_pred(
         x_test_plot: np.ndarray,
         q_hat: Optional[float] = None
 ):
-    is_ensemble = y_pred.ndim == 3  # Ensemble will have 3-dimensional output (models_gilbreth, batch index, output)
+    is_ensemble = y_pred.ndim == 3  # Ensemble will have 3-dimensional output (models, batch index, output)
     num_samples = 10
 
     indices = np.random.choice(len(y_test), size=num_samples, replace=False)
-    fig, axs = plt.subplots(num_samples, 1, figsize=(12, 4 * num_samples), sharex=True, sharey=True)
+    fig, axs = plt.subplots(num_samples, 1, figsize=(12, 6 * num_samples), sharex=True, sharey=True)
 
     # Select trunk inputs
     x_trunk_coords = x_test[1][:, 0]
@@ -151,13 +149,6 @@ def plot_pred(
         # Average width
         average_width = np.mean(upper - lower)
 
-        # Covariance
-        # Reshape to (num_models, batch_size * output_dim)
-        num_models = y_pred.shape[0]
-        cov_matrix = np.cov(y_pred.reshape(num_models, -1))
-        num_off_diagonal = num_models * (num_models - 1)
-        avg_covariance = (np.sum(cov_matrix) - np.trace(cov_matrix)) / num_off_diagonal
-
         fig.suptitle(
             f"Prediction with conformal intervals\n"
             f"Error: {error:.6f}\n"
@@ -166,7 +157,6 @@ def plot_pred(
         )
         print(f"Average width: {average_width:.6f}")
         print(f"Max width: {np.max(upper - lower):.6f}")
-        print(f"Avg covariance: {avg_covariance:.6f}")
         print(f"Coverage: {coverage_percent:.6f}")
     else:
         fig.suptitle(
@@ -177,6 +167,6 @@ def plot_pred(
 
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    plt.savefig(output_dir / f"predictions_plot_{timestamp}.png")
+    plt.savefig(output_dir / f"simulation_plots/predictions_plot_{timestamp}.png")
     plt.close()
 
