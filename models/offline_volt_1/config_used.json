@@ -1,0 +1,22 @@
+{
+    "bootstrap": false,
+    "data_dir": "offline_voltage",
+    "fourier_features": true,
+    "model_name": "offline_volt_1",
+    "ensemble": 0,
+    "ensemble_name": null,
+    "iterations": 5000,
+    "lr": 0.01,
+    "display_every": 50,
+    "model_type": "ResOrthoONet",
+    "batch_size": 512,
+    "online": false,
+    "layers": [
+        100,
+        100
+    ],
+    "decay_gamma": 0.99984,
+    "minimum_lr": 0.0001,
+    "seed": 1515807336,
+    "verbose": true
+}

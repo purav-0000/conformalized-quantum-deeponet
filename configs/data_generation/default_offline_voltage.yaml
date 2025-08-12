@@ -23,4 +23,6 @@ rng1: null
 rng2: null
 verbose: false
 
+# Filtering
 variance_filter_percentile: 1.0   # Example: Keep the 50% of samples with the lowest variance
+variance_filter_mode: "highest"

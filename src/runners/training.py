@@ -131,6 +131,7 @@ class TrainingRunner:
 
         # Optional bootstrapping
         if self.config.bootstrap:
+            logging.info("Bootstrapping dataset")
             n_train = y_train_full.shape[0]
             indices = np.random.choice(n_train, n_train, replace=True)
             x_train = (x_train_full[0][indices], x_train_full[1])  # Fixed trunk bootstrapping

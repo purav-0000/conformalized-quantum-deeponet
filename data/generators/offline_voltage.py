@@ -45,6 +45,7 @@ class Config:
 
     # Filters dataset, keeping only lowest variance parcentile
     variance_filter_percentile: float = 1.0
+    variance_filter_mode: str = "highest"
 
 
 def load_config(yaml_path: str) -> Config:
@@ -209,63 +210,91 @@ def run_generation(config: Config):
         config=config
     )
 
-    # Remove hard samples
-    if 0.0 < config.variance_filter_percentile < 1.0:
-        logging.info(
-            f"Filtering dataset to keep samples with the lowest {config.variance_filter_percentile * 100:.0f}% variance.")
 
+    # Filter by variance
+    if 0.0 < config.variance_filter_percentile < 1.0:
+
+        # Calculate variance once for all samples
         output_variances = np.var(g_data, axis=1)
-        variance_threshold = np.quantile(output_variances, config.variance_filter_percentile)
-        keep_mask = output_variances <= variance_threshold
+
+        if config.variance_filter_mode == 'remove_highest':
+            # Keep samples with the LOWEST variance.
+            variance_threshold = np.quantile(output_variances, config.variance_filter_percentile)
+            keep_mask = output_variances <= variance_threshold
+
+            percentage = config.variance_filter_percentile * 100
+            filter_description = f"Filtering dataset to KEEP samples with the LOWEST {percentage:.0f}% variance."
+            kept_label, discarded_label = "LOW", "HIGH"
+
+        elif config.variance_filter_mode == 'remove_lowest':
+            # Keep samples with the HIGHEST variance.
+            variance_threshold = np.quantile(output_variances, config.variance_filter_percentile)
+            keep_mask = output_variances >= variance_threshold
+
+            # Descriptive labels for logging and plotting
+            percentage = (1 - config.variance_filter_percentile) * 100
+            filter_description = f"Filtering dataset to KEEP samples with the HIGHEST {percentage:.0f}% variance."
+            kept_label, discarded_label = "HIGH", "LOW"
+
+        else:
+            # Added for robustness
+            raise ValueError(
+                f"Invalid config.variance_filter_mode: '{config.variance_filter_mode}'. Choose 'remove_highest' or 'remove_lowest'.")
+
+        logging.info(filter_description)
+
+        # Filter logic
 
         # Store original data and indices for plotting before filtering
         if config.verbose:
-            g_data_unfiltered = g_data.copy()  # Make a copy before it's modified
+            g_data_unfiltered = g_data.copy()
             kept_indices = np.where(keep_mask)[0]
             discarded_indices = np.where(~keep_mask)[0]
 
-        # Apply the filter
+        # Apply the filter mask
         original_count = u_data.shape[0]
         u_data = u_data[keep_mask]
         g_data = g_data[keep_mask]
         logging.info(f"Filtering complete. Kept {u_data.shape[0]} out of {original_count} samples.")
 
-        # Visualization of the filtering effect
+        # Visualize
+
         if config.verbose:
             logging.info("Displaying diagnostic plots for variance filtering...")
 
-            # 1. Plot the histogram of all variances and the threshold
+            # Plot the histogram of all variances and the threshold
             plt.figure(figsize=(10, 6))
             plt.hist(output_variances, bins=50, alpha=0.75, label="Variance Distribution")
             plt.axvline(x=variance_threshold, color='r', linestyle='--', linewidth=2,
-                        label=f"Threshold at {variance_threshold:.2e} ({config.variance_filter_percentile * 100:.0f}th percentile)")
-            plt.title("Distribution of Output Variances for Filtering")
+                        label=f"Threshold at {variance_threshold:.2e}")
+            plt.title(f"Distribution of Output Variances ({filter_description})")
             plt.xlabel("Variance of g_data")
             plt.ylabel("Number of Samples")
             plt.legend()
             plt.grid(True)
             plt.show()
 
-            # 2. Plot a few examples of signals that were KEPT (low variance)
-            logging.info(f"Plotting up to 3 examples of KEPT low-variance samples...")
+            # Plot a few examples of signals that were KEPT
+            logging.info(f"Plotting up to 3 examples of KEPT ({kept_label} variance) samples...")
             for i in range(min(3, len(kept_indices))):
                 idx = kept_indices[i]
                 plt.figure(figsize=(10, 6))
                 plt.plot(y_data, g_data_unfiltered[idx, :], '.-g')
-                plt.title(f"KEPT Sample (Index: {idx}) | Variance: {output_variances[idx]:.2e} (LOW)")
+                plt.title(f"KEPT Sample (Index: {idx}) | Variance: {output_variances[idx]:.2e} ({kept_label})")
                 plt.xlabel("Time")
                 plt.ylabel("Voltage")
                 plt.grid(True)
                 plt.ylim(0, 1.2)
                 plt.show()
 
-            # 3. Plot a few examples of signals that were DISCARDED (high variance)
-            logging.info(f"Plotting up to 3 examples of DISCARDED high-variance samples...")
+            # Plot a few examples of signals that were DISCARDED
+            logging.info(f"Plotting up to 3 examples of DISCARDED ({discarded_label} variance) samples...")
             for i in range(min(3, len(discarded_indices))):
                 idx = discarded_indices[i]
                 plt.figure(figsize=(10, 6))
                 plt.plot(y_data, g_data_unfiltered[idx, :], '.-r')
-                plt.title(f"DISCARDED Sample (Index: {idx}) | Variance: {output_variances[idx]:.2e} (HIGH)")
+                plt.title(
+                    f"DISCARDED Sample (Index: {idx}) | Variance: {output_variances[idx]:.2e} ({discarded_label})")
                 plt.xlabel("Time")
                 plt.ylabel("Voltage")
                 plt.grid(True)
@@ -273,7 +302,7 @@ def run_generation(config: Config):
                 plt.show()
 
     else:
-        logging.info("No variance filtering applied (percentile is 1.0 or invalid).")
+        logging.info("No variance filtering applied (percentile is not between 0.0 and 1.0).")
 
     # --- Step 4: Split and Save Data ---
     logging.info(f"Splitting and saving the data to {config.output_data_dir}")
