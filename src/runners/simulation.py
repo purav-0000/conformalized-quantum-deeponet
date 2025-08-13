@@ -222,26 +222,31 @@ class SimulationRunner:
                                                        is_trunk=True)
 
         # Run quantum layer
+        residual = False
         for i in range(0, last_layer_num + 1):
             weights = load_weights(model_path, layer=i)
 
             if i == last_layer_num:
                 last_layer = True
 
+            if i > 0 and self.config.residual:
+                residual = True
+
             if not self.config.classical_branch:
                 branch_outputs = self._run_quantum_layer(*self.get_layer_params(BRANCH_PREFIX, inputs, weights),
-                                                         last_layer=last_layer, is_trunk=False)
+                                                         last_layer=last_layer, is_trunk=False, residual=residual)
 
             if not self.config.classical_trunk:
                 trunk_outputs = self._run_quantum_layer(*self.get_layer_params(TRUNK_PREFIX, inputs, weights),
-                                                        last_layer=last_layer, is_trunk=True)
+                                                         last_layer=last_layer, is_trunk=True, residual=residual)
 
             # Prepare for next layer
             inputs = (branch_outputs, trunk_outputs)
 
         return np.einsum('bi,ni->bn', branch_outputs, trunk_outputs) + weights["final_bias"]
 
-    def _run_quantum_layer(self, inputs, n_in, n_out, bias, weight, output_bias, thetas, last_layer: bool, is_trunk: bool):
+    def _run_quantum_layer(self, inputs, n_in, n_out, bias, weight, output_bias, thetas, last_layer: bool,
+                           is_trunk: bool, residual: bool):
         """Simulates the execution of one quantum layer (branch or trunk)."""
         # Precompute gates
         sqrt_norm = np.sqrt(max(n_in, n_out))
@@ -295,7 +300,8 @@ class SimulationRunner:
 
             # Parallelization results in massive overhead, so removed it
             batch_outputs = [
-                self._process_quantum_output(j, results, n_in, n_out, bias, weight, output_bias, last_layer, is_trunk)
+                self._process_quantum_output(j, results, n_in, n_out, bias, weight, output_bias, last_layer, is_trunk,
+                                             batch[j] if residual else None)
                 for j in range(len(batch))
             ]
             all_outputs.extend(batch_outputs)
@@ -311,7 +317,7 @@ class SimulationRunner:
         return np.array(all_outputs)
 
     def _process_quantum_output(self, idx, results, n_in, n_out, hidden0_bias, output_weight, output_bias,
-                                last_layer: bool, is_trunk: bool):
+                                last_layer: bool, is_trunk: bool, residual):
         """Processes the raw statevector from a single circuit run."""
 
         """
@@ -412,6 +418,12 @@ class SimulationRunner:
             output.append(np.sqrt(max(n_in, n_out)) * (result0 - result1))
 
         output = silu(np.array(output) + hidden0_bias)
+
+        # For ResNets
+        if residual is not None:
+            res_term = residual / np.linalg.norm(residual)
+            output += res_term
+
         if last_layer:
             # Apply classical post-processing layers
             output = np.dot(output, output_weight.T) + output_bias
