@@ -19,8 +19,10 @@ class OrthoNN(dde.nn.pytorch.NN):
             self.activation = activations.get(activation)
         self.layer_sizes = layer_sizes
         self.hidden_layers = torch.nn.ModuleList()
+
         for i in range(len(layer_sizes) - 2):
             self.hidden_layers.append(OrthoLayer(layer_sizes[i], layer_sizes[i + 1]))
+
         self.output_layer = torch.nn.Linear(layer_sizes[-2], layer_sizes[-1])
 
     def forward(self, inputs):
@@ -31,8 +33,8 @@ class OrthoNN(dde.nn.pytorch.NN):
             x = self._input_transform(x)
 
         for i in range(len(self.layer_sizes) - 2):
-            # norm = x.norm(dim=1, keepdim=True)
-            # x = x / norm
+            norm = x.norm(dim=1, keepdim=True)
+            x = x / norm
 
             x = self.hidden_layers[i](x)
             x = (

@@ -1,0 +1,23 @@
+{
+    "bootstrap": false,
+    "data_dir": "antiderivative",
+    "fourier_features": false,
+    "model_name": "test",
+    "ensemble": 0,
+    "ensemble_name": null,
+    "iterations": 2000,
+    "lr": 0.001,
+    "display_every": 1000,
+    "model_type": "OrthoONet",
+    "batch_size": null,
+    "online": false,
+    "layers": [
+        5,
+        5,
+        5
+    ],
+    "decay_gamma": null,
+    "minimum_lr": null,
+    "seed": 1108129015,
+    "verbose": false
+}

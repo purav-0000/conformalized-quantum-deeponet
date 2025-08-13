@@ -16,8 +16,6 @@ def silu(x: np.ndarray) -> np.ndarray:
 
 def load_weights(directory: Path, layer) -> dict:
 
-    weights = {}
-
     return {
         "branch_hidden_bias": np.loadtxt(os.path.join(directory, f"branch.hidden_layers.{layer}.bias.txt")),
         "branch_hidden_thetas": np.loadtxt(os.path.join(directory, f"branch.hidden_layers.{layer}.thetas.txt")),

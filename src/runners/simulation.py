@@ -155,7 +155,7 @@ class SimulationRunner:
     def _run_ensemble_sequential(self):
         """Executes the simulation for an ensemble of models."""
         ensemble_dir = Path("models", "ensembles", self.config.ensemble)
-        model_dirs = [d for d in ensemble_dir.iterdir() if d.is_dir()]
+        model_dirs = [d for d in ensemble_dir.iterdir() if d.is_dir() and d.name != 'simulation_plots']
         print(f"Found {len(model_dirs)} models in ensemble: {self.config.ensemble}")
 
         # Calculate calibration scores (conformal prediction)
@@ -434,8 +434,6 @@ class SimulationRunner:
         # Doesn't matter which layer you get it from, -1 is arbitrary
         layers.append(weights[-1][f"{prefix}_output_bias"].shape[0])
 
-        print(layers)
-
         net = None
         if self.config.residual:
             net = ResOrthoNN(layers, activation='silu')
@@ -452,6 +450,7 @@ class SimulationRunner:
 
         output = net(torch.from_numpy(inputs).float()).cpu().detach().numpy()
         return silu(output) if is_trunk else output
+
 
     # SPQC stuffs
     def _load_ensemble_parameters(self, model_dirs: List[Path], layer: int) -> Dict[str, Dict]:

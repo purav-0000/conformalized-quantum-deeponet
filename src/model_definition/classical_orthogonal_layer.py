@@ -45,8 +45,6 @@ class OrthoLayer(torch.nn.Module):
                 torch.cat([torch.tensor([2 * i, 2 * i + 1]).repeat(2) for i in range(n)])
             ]))
 
-
-
     def hidden_layer(self, x, in_features, out_features):
 
         if in_features < out_features:  # generate the pyramid for in_features < out_features case
@@ -82,3 +80,4 @@ class OrthoLayer(torch.nn.Module):
             )
         x = self.hidden_layer(x, self.in_features, self.out_features)
         return x
+

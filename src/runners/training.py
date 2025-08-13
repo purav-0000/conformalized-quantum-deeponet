@@ -260,9 +260,11 @@ class TrainingRunner:
         model.save(str(model_dir / "model_checkpoint"))
         dde.utils.external.save_loss_history(losshistory, str(model_dir / "loss_history.txt"))
 
-        # Save weights as plain text for easy loading in simulation
-        for name, param in model.net.named_parameters():
-            np.savetxt(model_dir / f"{name}.txt", param.cpu().detach().numpy())
+        # If Ortho nets were not used then saving checkpoint is sufficient
+        if self.config.model_type == "OrthoONet" or self.config.model_type == "ResOrthoONet":
+            # Save weights as plain text for easy loading in simulation
+            for name, param in model.net.named_parameters():
+                np.savetxt(model_dir / f"{name}.txt", param.cpu().detach().numpy())
 
         # Save the seed and config for reproducibility
         (model_dir / "seed.txt").write_text(str(seed))
