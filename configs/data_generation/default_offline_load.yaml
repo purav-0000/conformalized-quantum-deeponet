@@ -9,9 +9,9 @@ output_variable_key: 'P'
 # Preprocessing Hyperparameters
 # None sets to full domain
 time_domain_limits: [0.0, 10.0]
-filter_strength_divisor: 50.0
-input_resolution: 20
-output_resolution: 40
+filter_strength_divisor: 100.0
+input_resolution: 25
+output_resolution: 100
 
 # Splitting Ratios
 train_split: 0.8

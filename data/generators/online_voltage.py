@@ -4,7 +4,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 import secrets
-from typing import Optional
+from typing import Optional, List
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,7 +28,7 @@ class Config:
     # Data Parameters
     memory_window_size: int = 100  # Number of past time steps to use as input (tau)
     prediction_horizon: int = 1  # Number of future time steps to predict (fixed at 1 for t+1)
-    max_time: float = 8.0
+    time_domain_limits: list[float] = field(default_factory=lambda: [4.0, 6.0])
 
     # Splitting Ratios
     max_samples: int = 10000
@@ -74,7 +74,7 @@ def raw_data_processor(voltage_data, config: Config):
     return central_voltage
 
 
-def creating_DeepONet_dataset_cartesian(signals_database, config: Config):
+def creating_DeepONet_dataset_cartesian(signals_database, time_mask, config: Config):
     """
     Creates a dataset based on a sliding window approach.
 
@@ -83,12 +83,10 @@ def creating_DeepONet_dataset_cartesian(signals_database, config: Config):
     - target_value: The single data point immediately following the window.
     """
     num_signals = signals_database.shape[0]
-    original_time = np.linspace(-0.1, 12.0, num=signals_database.shape[1])
 
-    # Mask database to only include data points till max time
-    mask = original_time <= config.max_time
-    signals_database = signals_database[:, mask]
-    original_time = original_time[mask]
+    # Assuming that raw_data_processor shaped according to (clients?, config.num_data_per_client - 1)
+    original_time = np.linspace(-0.1, 12.0, num=config.num_data_per_client - 1)
+    original_time = original_time[time_mask]
 
     # All memory windows
     U_data = []
@@ -102,10 +100,16 @@ def creating_DeepONet_dataset_cartesian(signals_database, config: Config):
 
     num_signals = signals_database.shape[0]
 
+    # The total length needed for one sample is window_size + horizon
+    # The selection of signal 0 here is arbitrary
+    max_start_index = len(signals_database[0]) - config.memory_window_size - config.prediction_horizon + 1
     for i in range(num_signals):
         signal = signals_database[i]
-        # The total length needed for one sample is window_size + horizon
-        max_start_index = len(signal) - config.memory_window_size - config.prediction_horizon + 1
+
+        U_data_window = []
+        U_time_window = []
+        Y_data_window = []
+        G_data_window = []
 
         for start_idx in range(max_start_index):
             end_idx = start_idx + config.memory_window_size
@@ -116,16 +120,20 @@ def creating_DeepONet_dataset_cartesian(signals_database, config: Config):
             # The target is the single point after the window
             target = signal[end_idx]
 
-            U_data.append(window)
-            U_time.append(original_time[start_idx:end_idx])
-            Y_data.append(original_time[end_idx])
-            G_data.append(target)
+            U_data_window.append(window)
+            U_time_window.append(original_time[start_idx:end_idx])
+            Y_data_window.append(original_time[end_idx])
+            G_data_window.append(target)
+        U_data.append(U_data_window)
+        U_time.append(U_time_window)
+        Y_data.append(Y_data_window)
+        G_data.append(G_data_window)
 
     # Convert lists to numpy arrays
     U_data = np.array(U_data, dtype=np.float32)
     U_time = np.array(U_time, dtype=np.float32)
-    Y_data = np.array(Y_data, dtype=np.float32).reshape(-1, 1)  # Reshape for model
-    G_data = np.array(G_data, dtype=np.float32).reshape(-1, 1)
+    Y_data = np.array(Y_data, dtype=np.float32).reshape(num_signals, -1, 1)  # Reshape for model
+    G_data = np.array(G_data, dtype=np.float32).reshape(num_signals, -1, 1)
 
     logging.info('Generated data shapes for Sliding Window Model:')
     logging.info(f'U_data (Input Windows) shape: {U_data.shape}')
@@ -136,17 +144,20 @@ def creating_DeepONet_dataset_cartesian(signals_database, config: Config):
         for i in range(3):
             # Plot one example to verify the logic
             plt.figure(figsize=(12, 6))
-            sample_idx_to_plot = np.random.randint(0, len(U_data))
+            sample_signal_to_plot = np.random.randint(0, num_signals)
+            sample_window_to_plot = np.random.randint(0, max_start_index)
 
             # Recreate the time axis for plotting
-            window_time = U_time[sample_idx_to_plot]
-            target_time = Y_data[sample_idx_to_plot]
+            window_time = U_time[sample_signal_to_plot, sample_window_to_plot]
+            target_time = Y_data[sample_signal_to_plot, sample_window_to_plot]
 
-            plt.plot(window_time, U_data[sample_idx_to_plot], 'bo-',
+            plt.plot(window_time, U_data[sample_signal_to_plot, sample_window_to_plot], 'bo-',
                      label=f'Input Window (t - {config.memory_window_size} to t-1)')
-            plt.plot(target_time, G_data[sample_idx_to_plot], 'r*', markersize=12, label='Target Value (at t)')
+            plt.plot(target_time, G_data[sample_signal_to_plot, sample_window_to_plot], 'r*', markersize=12,
+                     label='Target Value (at t)')
 
-            plt.title(f"Data Generation Check (Sliding Window) - Sample {sample_idx_to_plot}")
+            plt.title(f"Data Generation Check (Sliding Window) - Sample Signal: {sample_signal_to_plot}, "
+                      f"Window: {sample_window_to_plot}")
             plt.xlabel("Time Steps within Window")
             plt.ylabel("Voltage")
             plt.legend()
@@ -161,7 +172,7 @@ def run_generation(config: Config):
     """Executes the full data generation workflow."""
     logging.info("Starting sliding window data generation process...")
 
-    # --- Step 1: Load Raw Data ---
+    # Load Raw Data
     logging.info(f"Loading raw data from {config.input_data_path}")
     try:
         raw_data = np.load(config.input_data_path)
@@ -178,7 +189,23 @@ def run_generation(config: Config):
     centralized_voltage = raw_data_processor(voltage_data, config)
     logging.info(f"Centralized voltage data shape: {centralized_voltage.shape}")
 
-    # --- Step 3 (Optional): Filter Signals by Variance ---
+    # Constrain to time limits
+    time_mask = None
+    if config.time_domain_limits:
+        original_time = np.linspace(-0.1, 12.0, num=centralized_voltage.shape[1])
+        logging.info(f"Slicing raw data to time domain: {config.time_domain_limits}s...")
+        limits = config.time_domain_limits
+        assert limits[0] < limits[1], "time_domain_limits must be [min, max]."
+
+        time_mask = (original_time >= limits[0]) & (original_time <= limits[1])
+        if not np.any(time_mask):
+            raise ValueError(f"The specified time domain {limits} is outside the data's range.")
+
+        centralized_voltage = centralized_voltage[:, time_mask]
+        logging.info(
+            f"New shape after slicing: {centralized_voltage.shape}")
+
+    # Filter Signals by Variance
     if 0.0 < config.variance_filter_percentile < 1.0:
         logging.info(
             f"Filtering signals to keep those with the lowest {config.variance_filter_percentile * 100:.0f}% variance.")
@@ -194,27 +221,18 @@ def run_generation(config: Config):
     else:
         logging.info("No variance filtering applied.")
 
-    # --- Step 4: Create Sliding Window Dataset ---
+    # Create Sliding Window Dataset
     u_data, y_data, g_data, u_time = creating_DeepONet_dataset_cartesian(
         signals_database=centralized_voltage,
+        time_mask=time_mask,
         config=config
     )
 
-    # --- Step 5: Split and Save Data ---
-
+    # Split and Save Data
     num_samples = u_data.shape[0]
-
-    # Subsample
-    subsample_indices = np.random.choice(num_samples, config.max_samples, replace=False)
-    u_data = u_data[subsample_indices]
-    y_data = y_data[subsample_indices]
-    g_data = g_data[subsample_indices]
-    u_time = u_time[subsample_indices]
 
     logging.info(f"Splitting and saving the data to {config.output_data_dir}")
     os.makedirs(config.output_data_dir, exist_ok=True)
-
-    num_samples = u_data.shape[0]
 
     shuffled_indices = np.random.permutation(num_samples)
 

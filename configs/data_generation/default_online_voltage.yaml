@@ -7,11 +7,12 @@ num_nodes: 7
 num_data_per_client: 407
 
 # Data Parameters
-memory_window_size: 15  # Number of past time steps to use as input (tau)
-prediction_horizon: 1  # Number of future time steps to predict (fixed at 1 for t+1)
-max_time: 8.0
+memory_window_size: 10  # Number of past time steps to use as input (tau)
+prediction_horizon: 1   # Number of future time steps to predict (fixed at 1 for t+1)
+time_domain_limits: [4.0, 8.0]
 
 # Splitting Ratios
+max_samples: null
 train_split: 0.8
 cal_split: 0.1
 test_split: 0.1

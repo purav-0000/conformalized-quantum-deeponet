@@ -40,12 +40,14 @@ def create_decay_and_hold_scheduler(initial_lr: float, gamma: float, min_lr: flo
 
 def model_input_plotting(x_train, y_train: np.ndarray, model_dir: Path, x_train_plot: np.ndarray):
     """Check data being fed to model"""
+
     for i in range(3):
         index = np.random.randint(len(x_train[0]))
         plt.figure(figsize=(10, 6))
 
         # If online, create a plot with discretizations visible
         if y_train.shape[1] == 1:
+
             # -1 because last parameter is the augmented feature that represents norm
             plt.plot(x_train_plot[index], x_train[0][index, :-1], 'mo--', label=f'Branch input')
 

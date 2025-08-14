@@ -1,7 +1,7 @@
 # Data options
 bootstrap: false
 data_dir: offline_load_P
-fourier_features: false
+fourier_features: true
 
 # Model/ensemble options
 model_name: null

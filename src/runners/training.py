@@ -83,7 +83,8 @@ class TrainingRunner:
 
     def __init__(self, config: Config):
         self.config = config
-        self.data_handler = DataHandler(config.data_dir, fourier_features=self.config.fourier_features)
+        self.data_handler = DataHandler(config.data_dir, fourier_features=self.config.fourier_features,
+                                        online=self.config.online)
 
         if self.config.ensemble > 0:
             name = self.config.ensemble_name or f"ensemble_seed{self.config.seed}"
@@ -162,7 +163,13 @@ class TrainingRunner:
         )
 
         if self.config.verbose:
-            model_output_plotting(model, x_test, y_test, model_dir, self.data_handler.x_test_plot)
+            # Reshape for online plotting
+            x_test_plot = self.data_handler.x_test_plot
+            if self.config.online:
+                x_test = x_test[0].reshape(-1, x_test[0].shape[-1]), x_test[1].reshape(-1, x_test[1].shape[-1])
+                y_test = y_test.reshape(-1, y_test.shape[-1])
+                x_test_plot = x_test_plot.reshape(-1, x_test_plot.shape[-1])
+            model_output_plotting(model, x_test, y_test, model_dir, x_test_plot)
 
         # Save all results
         self._save_artifacts(model, losshistory, model_dir, seed)
@@ -173,7 +180,16 @@ class TrainingRunner:
 
         # Identify if dataset is for autoregression
         data = None
-        if x_train[0].shape[0] == x_train[1].shape[0]:
+        x_train_plot = self.data_handler.x_train_plot
+        if len(x_train[0].shape) == 3:
+
+            # Reshapes for deepxde model
+            x_train = x_train[0].reshape(-1, x_train[0].shape[-1]), x_train[1].reshape(-1, x_train[1].shape[-1])
+            y_train = y_train.reshape(-1, y_train.shape[-1])
+            x_test = x_test[0].reshape(-1, x_test[0].shape[-1]), x_test[1].reshape(-1, x_test[1].shape[-1])
+            y_test = y_test.reshape(-1, y_test.shape[-1])
+            x_train_plot = x_train_plot.reshape(-1, x_train_plot.shape[-1])
+
             data = dde.data.Triple(X_train=x_train, y_train=y_train, X_test=x_test, y_test=y_test)
         else:
             data = dde.data.TripleCartesianProd(X_train=x_train, y_train=y_train, X_test=x_test, y_test=y_test)
@@ -183,7 +199,7 @@ class TrainingRunner:
             os.makedirs(model_dir / "training_plots", exist_ok=True)
 
             # x_train_plot is used for the x ticks
-            model_input_plotting(x_train, y_train, model_dir, self.data_handler.x_train_plot)
+            model_input_plotting(x_train, y_train, model_dir, x_train_plot)
 
         m = x_train[0].shape[1]
         dim_x = x_train[1].shape[1]

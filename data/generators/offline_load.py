@@ -31,7 +31,7 @@ class Config:
 
     # Preprocessing Hyperparameters
     # None sets to full domain
-    time_domain_limits: list[float] | None = field(default_factory=lambda: [0.0, 10.0])
+    time_domain_limits: list[float] = field(default_factory=lambda: [0.0, 10.0])
     filter_strength_divisor: float = 20.0
     input_resolution: int = 100
     output_resolution: int = 30
@@ -108,21 +108,20 @@ def load_and_slice_data(config: Config) -> tuple[np.ndarray, np.ndarray, np.ndar
         f"Final combined shapes: {config.input_variable_key}={U_raw.shape}, {config.output_variable_key}={P_raw.shape}, t={t_raw.shape}"
     )
 
-    # Slice time domain if specaified
-    if config.time_domain_limits:
-        logging.info(f"Slicing raw data to time domain: {config.time_domain_limits}s...")
-        limits = config.time_domain_limits
-        assert limits[0] < limits[1], "time_domain_limits must be [min, max]."
+    # Slice time domain
+    logging.info(f"Slicing raw data to time domain: {config.time_domain_limits}s...")
+    limits = config.time_domain_limits
+    assert limits[0] < limits[1], "time_domain_limits must be [min, max]."
 
-        time_mask = (t_raw >= limits[0]) & (t_raw <= limits[1])
-        if not np.any(time_mask):
-            raise ValueError(f"The specified time domain {limits} is outside the data's range.")
+    time_mask = (t_raw >= limits[0]) & (t_raw <= limits[1])
+    if not np.any(time_mask):
+        raise ValueError(f"The specified time domain {limits} is outside the data's range.")
 
-        U_raw = U_raw[:, time_mask]
-        P_raw = P_raw[:, time_mask]
-        t_raw = t_raw[time_mask]
-        logging.info(
-            f"New shapes after slicing: {config.input_variable_key}={U_raw.shape}, {config.output_variable_key}={P_raw.shape}, t={t_raw.shape}")
+    U_raw = U_raw[:, time_mask]
+    P_raw = P_raw[:, time_mask]
+    t_raw = t_raw[time_mask]
+    logging.info(
+        f"New shapes after slicing: {config.input_variable_key}={U_raw.shape}, {config.output_variable_key}={P_raw.shape}, t={t_raw.shape}")
 
     return U_raw, P_raw, t_raw
 
@@ -135,7 +134,10 @@ def filter_and_downsample(U_raw: np.ndarray, P_raw: np.ndarray, t_raw: np.ndarra
     cutoff_freq = sampling_freq / config.filter_strength_divisor
     b, a = butter(4, cutoff_freq, btype='low', fs=sampling_freq)
 
-    U_filtered = filtfilt(b, a, U_raw, axis=1)
+    # No filtering for input 'V'
+    # U_filtered = filtfilt(b, a, U_raw, axis=1)
+    U_filtered = U_raw
+
     P_filtered = filtfilt(b, a, P_raw, axis=1)
 
     logging.info(

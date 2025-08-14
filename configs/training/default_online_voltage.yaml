@@ -18,7 +18,7 @@ online: true
 
 # Layer sizes
 # Note: For overrides, enter layers as layers=10,10 not layers=[10, 10]
-layers: [20, 20, 20, 20, 20]
+layers: [10, 10, 10, 10]
 
 # Scheduler
 decay_gamma: 0.998
