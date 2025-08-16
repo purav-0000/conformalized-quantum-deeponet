@@ -7,18 +7,21 @@ model: null
 ensemble: null
 
 # Simulation parameters
-n_jobs: 4
-simulator: CPU
-mode: ideal   # or 'shots'
-shots: 0
 batch_size: null
 coverage: 0.9
 spqc: false
+target_gpu: 0
+residual: true
+online: false
+n_jobs: 4
+simulator: "CPU"  # or "GPU"
+
+# Quantum circuit parameters
+mode: "ideal"     # or "shots"
+shots: 0
 classical_branch: false
 classical_trunk: false
 noise: 0.0
-target_gpu: 0
-residual: true
 
 # Seed and debugging
 analyze_circuit_cost: false

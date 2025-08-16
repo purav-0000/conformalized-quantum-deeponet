@@ -1,26 +1,28 @@
 # Data options
-bootstrap: false
 data_dir: advection
 fourier_features: false
+online: false
+bootstrap: false
 
 # Model/ensemble options
 model_name: null
-ensemble: 0
+ensemble_size: 0
 ensemble_name: null
+model_type: ResOrthoONet
 
-# Training hyperparamters
+# Training hyperparameters
 iterations: 30000
-lr: 0.0005
-display_every: 250
-model_type: "ResOrthoONet"
+lr: 0.001
 batch_size: null
+loss: MSE
 
 # Layer sizes
-# Note: For overrides, enter layers as layers=10,10 not layers=[10, 10]
 layers: [20, 20, 20, 20, 20]
 
-# Scheduler
+# Scheduler options
 decay_gamma: null
 minimum_lr: null
 
-verbose: False
+# Reproducibility and Debugging
+verbose: false
+display_every: 1000

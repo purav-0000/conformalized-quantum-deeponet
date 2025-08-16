@@ -1,10 +1,14 @@
+import time
+import argparse
+from typing import List
+import numpy as np
 import torch
 from torch import nn
-import numpy as np
-import time
-from typing import List
 
 
+# --- Layer Implementations ---
+
+# This is the original version in Xiao et al.
 class OrthoLayer(torch.nn.Module):
     def __init__(self, in_features, out_features):
         super().__init__()
@@ -76,6 +80,7 @@ class OrthoLayer(torch.nn.Module):
         return x
 
 
+# This is our version that pre-computes indices
 class OrthoLayerOptimized(torch.nn.Module):
     def __init__(self, in_features, out_features):
         super().__init__()
@@ -85,10 +90,7 @@ class OrthoLayerOptimized(torch.nn.Module):
         smaller_features = min(in_features, out_features)
 
         # This calculation needs to use the modified smaller_features for the in==out case
-        temp_smaller = smaller_features
-        if larger_features == smaller_features:
-            temp_smaller -= 1
-        size = (2 * larger_features - 1 - temp_smaller) * temp_smaller // 2
+        size = (2 * larger_features - 1 - smaller_features) * smaller_features // 2
 
         self.thetas = torch.nn.Parameter(torch.randn(int(size)))
         self.bias = torch.nn.Parameter(torch.zeros(int(out_features)))
@@ -118,21 +120,22 @@ class OrthoLayerOptimized(torch.nn.Module):
             col_idx = torch.cat([torch.tensor([2 * i, 2 * i + 1]).repeat(2) for i in range(n)])
             self.precomputed_indices.append(torch.stack([row_idx, col_idx]))
 
-        if in_features < out_features:
-            self.x_end_index = self.x_end_index[::-1]
-            self.x_start_index = self.x_start_index[::-1]
-            self.x_slice_sizes = self.x_slice_sizes[::-1]
-            self.precomputed_indices = self.precomputed_indices[::-1]
-
-
     def hidden_layer(self, x, in_features, out_features):
         # Determine the order of operations based on layer dimensions
-
         if in_features < out_features:
+            x_end_index = self.x_end_index[::-1]
+            x_start_index = self.x_start_index[::-1]
+            x_slice_sizes = self.x_slice_sizes[::-1]
+            precomputed_indices = self.precomputed_indices[::-1]
             x = torch.nn.functional.pad(x, (out_features - in_features, 0))
+        else:
+            x_end_index = self.x_end_index
+            x_start_index = self.x_start_index
+            x_slice_sizes = self.x_slice_sizes
+            precomputed_indices = self.precomputed_indices
 
         theta_start = 0
-        for i, sz in enumerate(self.x_slice_sizes):
+        for i, sz in enumerate(x_slice_sizes):
             n = sz // 2
             if n == 0:
                 continue
@@ -142,20 +145,20 @@ class OrthoLayerOptimized(torch.nn.Module):
             theta_start = theta_end
 
             # Slice the original x from the previous step
-            x_slice = x[:, self.x_start_index[i]:self.x_end_index[i]]
+            x_slice = x[:, x_start_index[i]:x_end_index[i]]
 
             cos_t = torch.cos(theta_slice)
             sin_t = torch.sin(theta_slice)
             values = torch.stack((cos_t, sin_t, -sin_t, cos_t), dim=1).view(-1)
 
-            indices = self.precomputed_indices[i].to(x.device)
+            indices = precomputed_indices[i].to(x.device)
 
             rotation = torch.sparse_coo_tensor(
                 indices, values, (2 * n, 2 * n)
             )
 
             x_new = x.clone()
-            x_new[:, self.x_start_index[i]:self.x_end_index[i]] = torch.mm(x_slice, rotation)
+            x_new[:, x_start_index[i]:x_end_index[i]] = torch.mm(x_slice, rotation)
             x = x_new
 
         if in_features > out_features:
@@ -168,62 +171,81 @@ class OrthoLayerOptimized(torch.nn.Module):
             raise AssertionError(f"x shape {x.shape} isn't equal to {self.in_features}")
         return self.hidden_layer(x, self.in_features, self.out_features)
 
-def run_benchmark(model, name, n_runs, batch_size, in_features, device):
+
+# --- Benchmarking Utilities ---
+
+def run_benchmark(model: nn.Module, name: str, n_runs: int, batch_size: int, in_features: int, device: torch.device):
     """Measures the average forward pass time for a given model instance."""
     print(f"Benchmarking {name}...")
     model.to(device).eval()
     dummy_input = torch.randn(batch_size, in_features, device=device)
+
+    # Warmup runs
     with torch.no_grad():
-        for _ in range(10): _ = model(dummy_input)
-    if device.type == 'cuda': torch.cuda.synchronize()
+        for _ in range(10):
+            _ = model(dummy_input)
+
     start_time = time.perf_counter()
     with torch.no_grad():
-        for _ in range(n_runs): _ = model(dummy_input)
-    if device.type == 'cuda': torch.cuda.synchronize()
+        for _ in range(n_runs):
+            _ = model(dummy_input)
+
     end_time = time.perf_counter()
     avg_time_ms = (end_time - start_time) / n_runs * 1000
     print(f"  -> Average time: {avg_time_ms:.4f} ms per run")
     return avg_time_ms
 
-IN_FEATURES = 11
-OUT_FEATURES = 10
-BATCH_SIZE = 200
-N_RUNS = 200
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
 
-print("=" * 60)
-print(" OrthoLayer Performance and Correctness Check")
-print(f"Device: {device.type.upper()}, Layer: {IN_FEATURES}x{OUT_FEATURES}, Batch: {BATCH_SIZE}")
-print("=" * 60)
+def main(args):
 
-print("\n--- Verifying Output Correctness ---")
-baseline_layer = OrthoLayer(IN_FEATURES, OUT_FEATURES)
-optimized_layer_instance = OrthoLayerOptimized(IN_FEATURES, OUT_FEATURES)
-optimized_layer_instance.load_state_dict(baseline_layer.state_dict())
-baseline_layer.to(device).eval()
-optimized_layer_instance.to(device).eval()
-verification_input = torch.randn(BATCH_SIZE, IN_FEATURES, device=device)
-with torch.no_grad():
-    output_baseline = baseline_layer(verification_input)
-    output_optimized = optimized_layer_instance(verification_input)
-if torch.allclose(output_baseline, output_optimized, atol=1e-6):
-    print("✅ Success: Outputs from both layers are identical.")
-else:
-    print("❌ Failure: Outputs DO NOT match!")
-print("-" * 36)
+    # Ortho layers perform much faster on CPU given batch size and feature count are not too big
+    device = torch.device("cpu")
 
-print("\n--- Performance Benchmark ---")
-optimized_time = run_benchmark(optimized_layer_instance, "Optimized (JIT)", N_RUNS, BATCH_SIZE, IN_FEATURES, device)
-baseline_time = run_benchmark(baseline_layer, "Baseline", N_RUNS, BATCH_SIZE, IN_FEATURES, device)
+    print("=" * 60)
+    print(" OrthoLayer Performance and Correctness Check")
+    print(f"Device: {device.type.upper()}, Layer: {args.in_features}x{args.out_features}, Batch: {args.batch_size}")
+    print("=" * 60)
 
-print("\n" + "=" * 60)
-print(" Results")
-print("-" * 60)
-if optimized_time > 0 and baseline_time > 0:
-    speedup = baseline_time / optimized_time
-    print(f"🚀 Speedup: {speedup:.2f}x")
-else:
-    print("Could not calculate speedup.")
-print("=" * 60)
+    # --- Verification ---
+    print("\n--- Verifying Output Correctness ---")
+    baseline = OrthoLayer(args.in_features, args.out_features)
+    optimized = OrthoLayerOptimized(args.in_features, args.out_features)
 
+    # Ensure all models have the same parameters for a fair comparison
+    optimized.load_state_dict(baseline.state_dict())
+
+    baseline.to(device).eval()
+    optimized.to(device).eval()
+
+    verification_input = torch.randn(args.batch_size, args.in_features, device=device)
+    with torch.no_grad():
+        output_baseline = baseline(verification_input)
+        output_optimized = optimized(verification_input)
+
+    correct1 = torch.allclose(output_baseline, output_optimized, atol=1e-6)
+    print(f"✅ Baseline vs. Optimized Correct: {correct1}")
+    if not correct1:
+        print("❌ Failure: Outputs DO NOT match!")
+    print("-" * 36)
+
+    # Benchmarking
+    print("\n--- Performance Benchmark ---")
+    time_baseline = run_benchmark(baseline, "Baseline", args.n_runs, args.batch_size, args.in_features, device)
+    time_optimized = run_benchmark(optimized, "Optimized", args.n_runs, args.batch_size, args.in_features, device)
+
+    print("\n" + "=" * 60)
+    print(" Results")
+    print("-" * 60)
+    speedup = time_baseline / time_optimized
+    print(f"Overall Speedup (Optimized vs. Baseline): {speedup:.2f}x")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Benchmark Orthogonal Layer Implementations")
+    parser.add_argument("--in_features", type=int, default=20, help="Input features")
+    parser.add_argument("--out_features", type=int, default=20, help="Output features")
+    parser.add_argument("--batch_size", type=int, default=500, help="Batch size for benchmarking")
+    parser.add_argument("--n_runs", type=int, default=200, help="Number of benchmark runs")
+    cli_args = parser.parse_args()
+    main(cli_args)

@@ -1,27 +1,28 @@
 # Data options
-bootstrap: false
 data_dir: offline_load_Q
-fourier_features: false
+fourier_features: true
+online: false
+bootstrap: false
 
 # Model/ensemble options
 model_name: null
-ensemble: 0
+ensemble_size: 0
 ensemble_name: null
+model_type: ResOrthoONet
 
-# Training hyperparamters
+# Training hyperparameters
 iterations: 2500
 lr: 0.01
-display_every: 250
-model_type: "ResOrthoONet"
 batch_size: 512
-online: false
+loss: mean l2 relative error
 
 # Layer sizes
-# Note: For overrides, enter layers as layers=10,10 not layers=[10, 10]
-layers: [20, 20, 20, 20, 20]
+layers: [30, 30, 30, 30, 30]
 
-# Scheduler
-decay_gamma: 0.9996
-minimum_lr: 0.00005
+# Scheduler options
+decay_gamma: 0.998
+minimum_lr: 0.003
 
+# Reproducibility and Debugging
 verbose: true
+display_every: 250

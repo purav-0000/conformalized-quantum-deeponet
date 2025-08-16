@@ -1,14 +1,20 @@
+# Data generation parameters
 M: 1000
 Nu: 30
 Nv: 10
-amplitude: 1.0
-length_scale: 1.0
-interp: cubic
+# Note: When trying to provide a list with --override, pass comma separated values (e.g., 0.5,1,0).
+amplitude: [0.95, 1.05]     # Can provide a scalar
+length_scale: [0.25, 0.75]  # Can provide a scalar
+interp: "cubic"
 noise: 0.0
-n_jobs: 8
-test: 300
-train: 1500
-calibration: 300
 downsample: uniform
-integrator: scipy
-dry_run: false
+integrator: custom
+
+# Splits
+train: 1500
+test: 500
+calibration: 500
+
+# Miscellaneous
+n_jobs: 8
+verbose: false

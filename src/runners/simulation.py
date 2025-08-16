@@ -1,48 +1,51 @@
 import argparse
-from datetime import datetime
 import logging
 import os
-from pathlib import Path
 import random
-import secrets
-from dataclasses import dataclass, field
-from typing import Optional, Tuple, List, Dict
 import re
+import secrets
 import subprocess
 import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-import qiskit.qasm2
 import torch
 import yaml
 from joblib import Parallel, delayed
-from tqdm import tqdm
-
 from qiskit import transpile
 from qiskit_aer import AerSimulator
-from qiskit_aer.noise import depolarizing_error, NoiseModel
+from qiskit_aer.noise import NoiseModel, depolarizing_error
+from tqdm import tqdm
+
+# Local application imports
 from src.model_definition.classical_orthogonal_NN import OrthoNN
 from src.model_definition.classical_res_ortho_deeponet import ResOrthoNN
-from src.model_definition.quantum_layer_ideal import data_loader, W
+from src.model_definition.quantum_layer_ideal import W, data_loader
 from src.model_definition.spqc import create_spqc_circuit
 from src.utils.common import apply_overrides
 from src.utils.data_handling import DataHandler
-from src.utils.simulation import build_circuit, evaluate_model, load_weights, plot_pred, silu
+from src.utils.simulation import (build_circuit, evaluate_model, load_weights,
+                                  plot_pred, silu)
 
+# --- Constants ---
 BRANCH_PREFIX = "branch"
 TRUNK_PREFIX = "trunk"
+LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 
-# CANTOR GPU TEMP MANAGEMENT
-MAX_TEMP = 75
-CHECK_INTERVAL = 5
+# GPU Temperature Management Configuration (optional)
+MAX_GPU_TEMP = 75  # Celsius
+GPU_CHECK_INTERVAL = 5  # Seconds
+
 
 # --- Config ---
+
 @dataclass
 class Config:
-    """Configuration schema for simulation."""
 
     # Data options
-    data_dir: str = "data/processed_data/antiderivative"
+    data_dir: str = "antiderivative"
     fourier_features: bool = False
 
     # Pick model/ensemble
@@ -50,38 +53,51 @@ class Config:
     ensemble: str = None
 
     # Simulation parameters
-    n_jobs: int = 4
-    simulator: str = "CPU"  # or "GPU"
-    mode: str = "ideal"  # or "shots"
-    shots: int = 0
     batch_size: int = None
     coverage: float = 0.9
     spqc: bool = False
+    target_gpu: int = 0
+    residual: bool = False
+    online: bool = False
+    n_jobs: int = 4
+    simulator: str = "CPU"  # or "GPU"
+
+    # Quantum circuit parameters
+    mode: str = "ideal"     # or "shots"
+    shots: int = 0
     classical_branch: bool = False
     classical_trunk: bool = False
     noise: float = 0.0
-    target_gpu: int = 0
-    residual: bool = False
 
     # Seed and debugging
     analyze_circuit_cost: bool = False
     seed: int = field(default_factory=lambda: secrets.randbits(32))
 
-# CANTOR GET GPU TEMP
+
+# --- Utilities ---
+
 def get_gpu_temp(gpu_id=0):
+    """
+        Retrieves the current temperature of a specified NVIDIA GPU.
+
+        Args:
+            gpu_id: The integer ID of the GPU.
+
+        Returns:
+            The GPU temperature in Celsius, or None if it cannot be retrieved.
+    """
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits", "-i", str(gpu_id)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True
+            capture_output=True, text=True, check=True
         )
-        temp = int(result.stdout.strip())
-        return temp
-    except Exception as e:
-        print(f"Warning: Could not get GPU temperature: {e}")
+        return int(result.stdout.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError) as e:
+        logging.warning(f"Could not get GPU temperature for GPU {gpu_id}: {e}")
         return None
 
+
 def load_config(path: str) -> Config:
-    """Load configuration from a YAML file."""
     with open(path, 'r') as f:
         data = yaml.safe_load(f)
     return Config(**data)
@@ -92,93 +108,162 @@ def set_seeds(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
+
 # --- Core Simulation Logic ---
 
 class SimulationRunner:
     """Encapsulates the entire simulation workflow."""
 
     def __init__(self, config: Config):
+        """
+        Initializes the SimulationRunner with a given configuration.
+
+        Args:
+            config: The simulation configuration object.
+        """
         self.config = config
+        set_seeds(config.seed)
 
-        # Set up noise model
-        # For basis gates of Eagle processor
-        noise_model = NoiseModel(basis_gates=['ecr', 'id', 'rz', 'sx', 'x'])
-        print("Noise level: ", self.config.noise)
-        error_all_qubit = depolarizing_error(self.config.noise, 1)
-        error_all_qubit2 = depolarizing_error(0.8 * self.config.noise, 2)
-        noise_model.add_all_qubit_quantum_error(error_all_qubit, ['id', 'rz', 'sx', 'x'])
-        noise_model.add_all_qubit_quantum_error(error_all_qubit2, ['ecr'])
-
-        # SET TO AUTOMATIC IF REALISTIC NOISE SIMULATION
-        method = 'density_matrix' if self.config.noise > 0.0 else 'statevector'
-        self.simulator = AerSimulator(device=self.config.simulator, method=method, noise_model=noise_model)
-        self.data_handler = DataHandler(self.config.data_dir, fourier_features=self.config.fourier_features)
-
-        run_type = "SPQC" if self.config.spqc else "Sequential"
+        self.simulator = self._setup_simulator()
+        self.data_handler = self._setup_data_handler()
 
         if self.config.ensemble:
             self.output_dir = Path("models", "ensembles", self.config.ensemble)
-        else:
+        elif self.config.model:
             self.output_dir = Path("models", self.config.model)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Results for this run will be saved in: {self.output_dir}")
+        else:
+            raise ValueError("Configuration must specify either a 'model' or an 'ensemble'.")
 
-    def run(self):
-        """Main execution method."""
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        logging.info(f"Results will be saved in: {self.output_dir}")
+
+    def _setup_data_handler(self) -> DataHandler:
+        """Initializes the DataHandler and loads data."""
+        handler = DataHandler(
+            data_dir=self.config.data_dir,
+            fourier_features=self.config.fourier_features,
+            online=self.config.online
+        )
+        handler.load_and_process_data()
+        return handler
+
+    def _setup_simulator(self) -> AerSimulator:
+        """
+        Configures and returns the Qiskit AerSimulator based on the config.
+
+        Returns:
+            An instance of AerSimulator.
+        """
+        noise_model = None
+        method = 'statevector'
+
+        if self.config.noise > 0.0:
+            logging.info(f"Setting up depolarizing noise model with level: {self.config.noise}")
+            # For basis gates of Eagle processor
+            noise_model = NoiseModel(basis_gates=['ecr', 'id', 'rz', 'sx', 'x'])
+            error_1q = depolarizing_error(self.config.noise, 1)
+            error_2q = depolarizing_error(0.8 * self.config.noise, 2)  # Different error for 2-qubit gates
+            noise_model.add_all_qubit_quantum_error(error_1q, ['id', 'rz', 'sx', 'x'])
+            noise_model.add_all_qubit_quantum_error(error_2q, ['ecr'])
+            method = 'density_matrix'
+
+        # SET METHOD TO AUTOMATIC IF REALISTIC NOISE SIMULATION
+        return AerSimulator(device=self.config.simulator, method=method, noise_model=noise_model)
+
+    def run(self) -> None:
+        """
+        The main execution method that triggers the appropriate simulation workflow.
+        """
         if self.config.spqc:
             if not self.config.ensemble:
                 raise ValueError("SPQC mode requires an ensemble configuration.")
-            print("--- Running in SPQC Ensemble Mode ---")
+            logging.info("--- Running in SPQC Ensemble Mode ---")
             self._run_ensemble_spqc()
         elif self.config.ensemble:
-            print("--- Running in Sequential Ensemble Mode ---")
+            logging.info("--- Running in Sequential Ensemble Mode ---")
             self._run_ensemble_sequential()
-        else:
-            print("--- Running in Single Model Mode ---")
+        elif self.config.model:
+            logging.info("--- Running in Single Model Mode ---")
             self._run_single_model()
 
+    def _get_dataset(self, split: str):
+        x_split, y_split = self.data_handler.get_split(split)
 
-    def _run_single_model(self):
-        """Executes the simulation for a single model."""
+        # Online dataset is 3D (num_signals, num_locs, features)
+        # The 3D shape is ideal for plotting, but model still takes 2D shapes
+        if self.config.online:
+            x_split = (x_split[0].reshape(-1, x_split[0].shape[-1]), x_split[1].reshape(-1, x_split[1].shape[-1]))
+            y_split = y_split.reshape(-1, y_split.shape[-1])
+
+        return x_split, y_split
+
+
+    def _run_single_model(self) -> None:
+        """Executes the simulation for a single model and saves the results."""
         model_path = Path("models") / self.config.model
-        print(f"Running single model simulation: {self.config.model}")
+        logging.info(f"Running single model simulation: {self.config.model}")
 
-        y_pred = self._run_model(model_path, self.data_handler.x_test)
+        x_test, y_test = self._get_dataset('test')
 
-        os.makedirs(self.output_dir / "simulation_plots", exist_ok=True)
-        evaluate_model(y_pred, self.data_handler.y_test, self.output_dir, verbose=True)
+        y_pred = self._run_deeponet_forward_pass(model_path,
+                                                 x_test)
+
+        # Evaluate and plot
+        evaluate_model(y_pred, y_test, self.output_dir, verbose=False)
+
+        # data_handler used directly to avoid reshaping for online datasets in _get_dataset
         plot_pred(
-            self.data_handler.x_test, self.data_handler.y_test, y_pred,
-            self.output_dir, self.data_handler.x_test_plot
+            self.data_handler.datasets['test']['X'], self.data_handler.datasets['test']['y'], y_pred,
+            self.output_dir, self.data_handler.datasets['test']['X0_plot'], online=self.config.online
         )
 
-    def _run_ensemble_sequential(self):
-        """Executes the simulation for an ensemble of models."""
+    def _run_ensemble_sequential(self) -> None:
+        """Executes the simulation for an ensemble of models and applies conformal prediction."""
         ensemble_dir = Path("models", "ensembles", self.config.ensemble)
-        model_dirs = [d for d in ensemble_dir.iterdir() if d.is_dir() and d.name != 'simulation_plots']
-        print(f"Found {len(model_dirs)} models in ensemble: {self.config.ensemble}")
+        model_dirs = sorted([d for d in ensemble_dir.iterdir() if d.is_dir() and d.name != 'simulation_plots'])
+        logging.info(f"Found {len(model_dirs)} models in ensemble: {self.config.ensemble}")
 
-        # Calculate calibration scores (conformal prediction)
-        cal_outputs = [self._run_model(m, self.data_handler.x_cal) for m in
+        x_cal, y_cal = self._get_dataset('calibration')
+
+        # Run calibration set to calculate conformal scores
+        cal_outputs = [self._run_deeponet_forward_pass(m, x_cal) for m in
                        tqdm(model_dirs, desc="Running Calibration")]
         cal_outputs = np.array(cal_outputs)
 
-        scores = np.abs(self.data_handler.y_cal - cal_outputs.mean(axis=0)) / cal_outputs.std(axis=0)
+        # Calculate quantile for conformal prediction
+        scores = np.abs(y_cal - cal_outputs.mean(axis=0)) / cal_outputs.std(axis=0)
         q_hat = np.quantile(scores, self.config.coverage)
-        print(f"Conformal quantile q_hat at {self.config.coverage * 100}% coverage: {q_hat:.4f}")
+        logging.info(f"Conformal quantile q_hat at {self.config.coverage * 100:.1f}% coverage: {q_hat:.4f}")
 
-        # Evaluate on test set
-        test_outputs = [self._run_model(m, self.data_handler.x_test) for m in
+        # Run test set
+        x_test, y_test = self._get_dataset('test')
+
+        test_outputs = [self._run_deeponet_forward_pass(m, x_test) for m in
                         tqdm(model_dirs, desc="Running Test Set")]
         test_outputs = np.array(test_outputs)
 
-        evaluate_model(test_outputs, self.data_handler.y_test, self.output_dir, verbose=True)
+        # Evaluate and plot with prediction intervals
+        evaluate_model(test_outputs, y_test, self.output_dir, verbose=False)
+
+        # data_handler used directly to avoid reshaping for online datasets in _get_dataset
         plot_pred(
-            self.data_handler.x_test, self.data_handler.y_test, test_outputs,
-            self.output_dir, self.data_handler.x_test_plot, q_hat=q_hat
+            self.data_handler.datasets['test']['X'], self.data_handler.datasets['test']['y'], test_outputs,
+            self.output_dir, self.data_handler.datasets['test']['X0_plot'], q_hat=q_hat, online=self.config.online
         )
 
-    def get_layer_params(self, prefix: str, inputs, weights):
+    def _get_layer_params(self, prefix: str, inputs: Tuple[np.ndarray, np.ndarray] | Tuple[np.ndarray, None] |
+                          Tuple[None, np.ndarray], weights: Dict) -> Tuple:
+        """
+        Extracts parameters for a specific layer (branch or trunk) from the weights dictionary.
+
+        Args:
+            prefix: The prefix for the layer ('branch' or 'trunk').
+            inputs: A tuple containing the branch and trunk input arrays.
+            weights: A dictionary of weights for the current layer.
+
+        Returns:
+            A tuple of parameters needed to run the layer.
+        """
         x = inputs[0] if prefix == BRANCH_PREFIX else inputs[1]
         n_in = x.shape[1]
         n_out = weights[f"{prefix}_hidden_bias"].shape[0]
@@ -190,65 +275,98 @@ class SimulationRunner:
             weights[f"{prefix}_hidden_thetas"]
         )
 
-    def _run_model(self, model_path: Path, inputs: Tuple[np.ndarray, np.ndarray]) -> np.ndarray:
-        """Runs the full forward pass of a single DeepONet model."""
+    def _run_deeponet_forward_pass(self, model_path: Path, inputs: Tuple[np.ndarray, np.ndarray]) -> np.ndarray:
+        """
+        Runs the full forward pass of a single DeepONet model, layer by layer.
 
-        # Regex pattern
+        Args:
+            model_path: Path to the directory containing the model's weights.
+            inputs: A tuple containing the (branch_inputs, trunk_inputs).
+
+        Returns:
+            The final prediction array from the model.
+        """
+        # Find the number of hidden layers from the saved weight files
         pattern = re.compile(r'\.hidden_layers\.(\d+)\..*\.txt$')
 
-        # Collect layer numbers
-        layer_numbers = []
+        # THERE COULD BE AN ERROR HERE
+        layer_nums = [int(pattern.search(f.name).group(1)) for f in model_path.iterdir() if pattern.search(f.name)]
+        if not layer_nums:
+            raise FileNotFoundError(f"No valid layer weight files found in {model_path}")
 
-        # Match pattern
-        for file in model_path.iterdir():
-            if file.is_file():
-                match = pattern.search(file.name)
-                if match:
-                    layer_numbers.append(int(match.group(1)))
+        # NUM LAYERS IMPLEMENTATION SEEMS A LITTLE SHAKY
+        num_layers = max(layer_nums) + 1
 
-        # Find the last layer
-        last_layer_num = max(layer_numbers)
+        branch_outputs, trunk_outputs = inputs
 
-        # Initialize
-        branch_outputs, trunk_outputs, weights = None, None, None
-        last_layer = False
-
-        # Run classical layer if desired
+        # Run classical layer if specified
         if self.config.classical_branch:
-            branch_outputs = self._run_classical_layer(inputs[0], [load_weights(model_path, layer=i) for i in range(last_layer_num + 1)],
-                                                       is_trunk=False)
-        if self.config.classical_trunk:
-            trunk_outputs = self._run_classical_layer(inputs[1], [load_weights(model_path, layer=i) for i in range(last_layer_num + 1)],
-                                                       is_trunk=True)
+            branch_outputs = self._run_classical_layer(
+                inputs=inputs[0],
+                all_weights=[load_weights(model_path, layer=i) for i in range(num_layers)],
+                is_trunk=False
+            )
 
-        # Run quantum layer
-        residual = False
-        for i in range(0, last_layer_num + 1):
+        if self.config.classical_trunk:
+            trunk_outputs = self._run_classical_layer(
+                inputs=inputs[1],
+                all_weights=[load_weights(model_path, layer=i) for i in range(num_layers)],
+                is_trunk=True
+            )
+
+        # Run layer by layer
+        for i in range(num_layers - 1):
+            is_last_layer = (i == num_layers - 1)
+            is_residual_layer = (i > 0 and self.config.residual)
             weights = load_weights(model_path, layer=i)
 
-            if i == last_layer_num:
-                last_layer = True
-
-            if i > 0 and self.config.residual:
-                residual = True
-
+            branch_inputs_current_layer = branch_outputs
             if not self.config.classical_branch:
-                branch_outputs = self._run_quantum_layer(*self.get_layer_params(BRANCH_PREFIX, inputs, weights),
-                                                         last_layer=last_layer, is_trunk=False, residual=residual)
+                branch_params = self._get_layer_params(BRANCH_PREFIX, (branch_inputs_current_layer, None), weights)
+                branch_outputs = self._run_quantum_layer(
+                    *branch_params,
+                    last_layer=is_last_layer,
+                    is_trunk=False,
+                    residual=is_residual_layer
+                )
 
+            trunk_inputs_current_layer = trunk_outputs
             if not self.config.classical_trunk:
-                trunk_outputs = self._run_quantum_layer(*self.get_layer_params(TRUNK_PREFIX, inputs, weights),
-                                                         last_layer=last_layer, is_trunk=True, residual=residual)
+                trunk_params = self._get_layer_params(TRUNK_PREFIX, (None, trunk_inputs_current_layer), weights)
+                trunk_outputs = self._run_quantum_layer(
+                    *trunk_params,
+                    last_layer=is_last_layer,
+                    is_trunk=True,
+                    residual=is_residual_layer
+                )
 
-            # Prepare for next layer
-            inputs = (branch_outputs, trunk_outputs)
+        # Final dot product and bias
+        final_bias = load_weights(model_path, layer=num_layers - 1)["final_bias"]
 
-        return np.einsum('bi,ni->bn', branch_outputs, trunk_outputs) + weights["final_bias"]
+        # Online dataset is not Cartesian
+        subscripts = 'bi,ni->bn' if not self.config.online else 'bi,bi->b'
+        final_output =np.einsum(subscripts, branch_outputs, trunk_outputs) + final_bias
+        return final_output if not self.config.online else final_output.reshape(-1, 1)
 
-    def _run_quantum_layer(self, inputs, n_in, n_out, bias, weight, output_bias, thetas, last_layer: bool,
-                           is_trunk: bool, residual: bool):
-        """Simulates the execution of one quantum layer (branch or trunk)."""
-        # Precompute gates
+    def _run_quantum_layer(self, inputs: np.ndarray, n_in: int, n_out: int, bias: np.ndarray,
+                           weight: np.ndarray, output_bias: np.ndarray, thetas: np.ndarray,
+                           last_layer: bool, is_trunk: bool, residual: bool) -> np.ndarray:
+        """
+        Simulates the execution of one quantum layer (branch or trunk).
+
+        Args:
+            inputs: Input data for the layer.
+            n_in, n_out: Input and output dimensions.
+            bias, weight, output_bias, thetas: Layer parameters.
+            last_layer: Flag indicating if this is the final layer.
+            is_trunk: Flag indicating if this is the trunk network.
+            residual: Flag indicating if there is a skip connection
+
+        Returns:
+            The output of the quantum layer.
+        """
+
+        # Precompute gates for efficiency
         sqrt_norm = np.sqrt(max(n_in, n_out))
         W_gate = W(n_in, n_out, thetas)
         loader_gate = data_loader(np.full(max(n_in, n_out), 1 / sqrt_norm))
@@ -256,215 +374,220 @@ class SimulationRunner:
 
         all_outputs = []
         batch_size = self.config.batch_size or len(inputs)
-
-        # If batch_size is type str
-        batch_size = int(batch_size) if type(batch_size) is str else batch_size
+        is_noisy = self.config.noise > 0.0
 
         if self.config.analyze_circuit_cost:
-            print("Branch, " if not is_trunk else "Trunk, ", end='')
-            print(f"n_in: {n_in}, n_out: {n_out}, thetas_shape: {thetas.shape}")
+            logging.info("Branch: " if not is_trunk else "Trunk: ")
+            logging.info(f"n_in: {n_in}, n_out: {n_out}, thetas_shape: {thetas.shape}")
             build_circuit(
                 inputs[0], n_in, n_out, W_gate, loader_gate, loader_inv_gate, self.simulator, cost_check=True
             )   # Analyze depth using arbitray input
-            # DUMMY OUTPUT
+            # Dummy output
             return np.zeros((len(inputs), n_out))
 
-        # Noisy sim?
-        is_noisy = False
-        if self.config.noise > 0.0:
-            is_noisy = True
+        desc = "Running Trunk Layer" if is_trunk else "Running Branch Layer"
 
-        for i in tqdm(range(0, len(inputs), batch_size), desc="Running trunk layer" if is_trunk else "Running branch layer"):
-            batch = inputs[i:i + batch_size]
+        for i in tqdm(range(0, len(inputs), batch_size), desc=desc):
+            batch_inputs = inputs[i:i + batch_size]
 
-            # CANTOR GPU TEMP MONITORING
-            """
-            gpu_temp = get_gpu_temp(self.config.target_gpu)
-            while gpu_temp is not None and gpu_temp > MAX_TEMP:
-                # Mark the GPU as in-use
-                lock_file = f"/tmp/gpu{self.config.target_gpu}.lock"
-                with open(lock_file, "w") as f:
-                    f.write(str(os.getpid()))
+            # Optional: GPU Temperature Management
+            # self._wait_for_gpu_cooldown()
 
-                print(f"GPU temp {gpu_temp}°C exceeds max {MAX_TEMP}°C, sleeping {CHECK_INTERVAL}s...")
-                time.sleep(CHECK_INTERVAL)
-                gpu_temp = get_gpu_temp(self.config.target_gpu)
-            """
+            # Build circuits in parallel
             circuits = Parallel(n_jobs=self.config.n_jobs)(
-                delayed(build_circuit)(x, n_in, n_out, W_gate, loader_gate, loader_inv_gate, self.simulator, noisy=is_noisy)
-                for x in batch
+                delayed(build_circuit)(x, n_in, n_out, W_gate, loader_gate, loader_inv_gate, self.simulator,
+                                       noisy=is_noisy)
+                for x in batch_inputs
             )
 
             # SET SHOTS TO ACTUAL SHOTS FOR REALISTIC SIMULATION
             results = self.simulator.run(circuits, shots=1, target_gpus=[self.config.target_gpu]).result()
 
-            # Parallelization results in massive overhead, so removed it
+            # Process results sequentially (faster than parallel because of parallelism overhead I assume)
             batch_outputs = [
                 self._process_quantum_output(j, results, n_in, n_out, bias, weight, output_bias, last_layer, is_trunk,
-                                             batch[j] if residual else None)
-                for j in range(len(batch))
+                                             batch_inputs[j] if residual else None)
+                for j in range(len(batch_inputs))
             ]
             all_outputs.extend(batch_outputs)
 
-            # LOCK FILE FOR GPU
-            """
-            if os.path.exists("/tmp/gpu{self.config.target_gpu}.lock"):
-                os.remove("/tmp/gpu{self.config.target_gpu}.lock")
-            """
-
-        print()
-
         return np.array(all_outputs)
 
-    def _process_quantum_output(self, idx, results, n_in, n_out, hidden0_bias, output_weight, output_bias,
-                                last_layer: bool, is_trunk: bool, residual):
-        """Processes the raw statevector from a single circuit run."""
-
+    def _process_quantum_output(self, results, idx: int, n_in: int, n_out: int, hidden_bias: np.ndarray,
+                                output_weight: np.ndarray, output_bias: np.ndarray, last_layer: bool,
+                                is_trunk: bool, residual_term: Optional[np.ndarray]) -> np.ndarray:
         """
-        # Ensure lock is deleted
-        if os.path.exists("/tmp/gpu{self.config.target_gpu}.lock"):
-            os.remove("/tmp/gpu{self.config.target_gpu}.lock")
-        """
-        """
-                if self.config.mode == 'shots':
+        Processes the raw result from a single circuit run to compute the layer output.
 
-            # Get measurement counts directly (from repeated noisy shots)
-            counts_dict = results.get_counts(idx)
-            counts = np.zeros(2 ** (max(n_in, n_out) + 1))  # Total number of basis states
+        Args:
+            results: The Qiskit Result object from the simulation.
+            idx: The index of the circuit within the batch.
+            n_in, n_out: Input and output dimensions.
+            hidden_bias, output_weight, output_bias: Layer parameters.
+            last_layer, is_trunk: Flags for network structure.
+            residual_term: The residual term to add, if any.
 
-            # Convert bitstrings to integer indices
-            for bitstr, count in counts_dict.items():
-                index = int(bitstr.replace(' ', ''), 2)
-                counts[index] = count
-
-            if self.config.noise > 0.0:
-
-                # Error mitigation
-                valid_indices = []
-                for i in range(n_out):
-                    pos_vec = ['0'] * n_out
-                    pos_vec[i] = '1'
-                    pos0_str = (''.join(['0'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
-                    pos1_str = (''.join(['1'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
-                    valid_indices.extend([int(pos0_str, 2), int(pos1_str, 2)])
-
-                invalid_indices = np.setdiff1d(np.arange(len(counts)), valid_indices)
-                counts[invalid_indices] = 0
-
-                state_probs = counts / np.sum(counts)
-
-            else:
-                # Ideal + shots: sample from ideal probabilities
-                state_probs = counts / self.config.shots
-
-        else:  # ideal + analytic
-            if self.config.noise > 0.0:
-                probabilities = results.data(idx)['density_matrix'].data.diagonal().real
-            else:
-                statevector = np.real(results.data(idx)['state'].data)
-                probabilities = statevector ** 2
-
-            state_probs = probabilities
+        Returns:
+            The processed output vector for one input.
         """
 
-        # Get probabilities if noisy simulation
+        # It is ok to get only real values. RBS gates only operate in the real domain.
+        # Get Probabilities from Simulation Result
         if self.config.noise > 0.0:
-            # Diagonal has probabilities for basis states
+            # For noisy simulations, we get the diagonal of the density matrix
             probabilities = results.data(idx)['density_matrix'].data.diagonal().real
         else:
+            # For ideal simulations, we square the statevector amplitudes
             statevector = np.real(results.data(idx)['state'].data)
             probabilities = statevector ** 2
 
+        # Handle Simulation Mode (Shots vs. Ideal)
         if self.config.mode == 'shots':
+            # Sample from the probability distribution to simulate measurement shots
             counts = np.random.multinomial(self.config.shots, probabilities)
 
-            # Apply error mitigation if noisy
             if self.config.noise > 0.0:
-
-                # Indices for all unary vectors
-                valid_indices = []
-                for i in range(n_out):
-                    pos_vec = ['0'] * n_out
-                    pos_vec[i] = '1'
-                    # Qiskit uses a little-endian convention (qubit 0 is the rightmost bit),
-                    # so we build the string and then reverse it to match the statevector index.
-                    pos0_str = (''.join(['0'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
-                    pos1_str = (''.join(['1'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
-
-                    valid_indices.extend([int(pos0_str, 2), int(pos1_str, 2)])
-
-                invalid_indices = np.setdiff1d(np.arange(len(counts)), valid_indices)
+                # Mitigate errors by zeroing out probabilities of invalid states
+                valid_indices = self._get_valid_measurement_indices(n_in, n_out)
+                all_indices = np.arange(len(counts))
+                invalid_indices = np.setdiff1d(all_indices, valid_indices)
                 counts[invalid_indices] = 0
 
-                state_probs = counts / np.sum(counts)
-            else:
-                state_probs = counts / self.config.shots
-
-        else:  # ideal mode
+            state_probs = counts / np.sum(counts)
+        else:
+            # In 'ideal' mode, we use the raw probabilities directly
             state_probs = probabilities
 
-        # Bit indexing to extract expectation values
+        # This reconstructs the output vector from the probabilities of specific basis states.
+        # It relies on the circuit design where the sign of the output is encoded in an ancilla qubit.
         output = []
         for i in range(n_out):
+            # Qiskit uses a little-endian convention (qubit 0 is rightmost).
+            # We construct the bitstring for the i-th output neuron being 'on'.
+            # 'pos_vec' is a unary vector, e.g., '0010' for i=2, n_out=4.
             pos_vec = ['0'] * n_out
             pos_vec[i] = '1'
-            # Qiskit uses a little-endian convention (qubit 0 is the rightmost bit),
-            # so we build the string and then reverse it to match the statevector index.
-            pos0_str = (''.join(['0'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
-            pos1_str = (''.join(['1'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
+            padding = ['0'] * (max(n_in, n_out) - n_out)
 
-            result0 = state_probs[int(pos0_str, 2)]
-            result1 = state_probs[int(pos1_str, 2)]
-            output.append(np.sqrt(max(n_in, n_out)) * (result0 - result1))
+            # Bitstring for ancilla=0 and ancilla=1
+            pos0_str = (''.join(['0'] + padding + pos_vec))[::-1]
+            pos1_str = (''.join(['1'] + padding + pos_vec))[::-1]
 
-        output = silu(np.array(output) + hidden0_bias)
+            # Get probabilities for these two states
+            prob_ancilla0 = state_probs[int(pos0_str, 2)]
+            prob_ancilla1 = state_probs[int(pos1_str, 2)]
 
-        # For ResNets
-        if residual is not None:
-            res_term = residual / np.linalg.norm(residual)
-            output += res_term
+            # Extract amplitude with sign inferred from ancilla
+            amplitude = np.sqrt(max(n_in, n_out)) * (prob_ancilla0 - prob_ancilla1)
+            output.append(amplitude)
+
+        # Apply Classical Post-Processing
+        output = silu(np.array(output) + hidden_bias)
+
+        if residual_term is not None:
+            # Add normalized residual connection
+            norm_res = residual_term / np.linalg.norm(residual_term)
+            output += norm_res
 
         if last_layer:
-            # Apply classical post-processing layers
+            # Apply final linear layer
             output = np.dot(output, output_weight.T) + output_bias
-
             if is_trunk:
                 output = silu(output)
 
         return output
 
+    def _get_valid_measurement_indices(self, n_in: int, n_out: int) -> List[int]:
+        """
+        Calculates the integer indices of the valid basis states for error mitigation.
+        A valid state has a unary vector in the output register.
+        """
+        valid_indices = []
+        padding = ['0'] * (max(n_in, n_out) - n_out)
+        for i in range(n_out):
+            pos_vec = ['0'] * n_out
+            pos_vec[i] = '1'
+            # Ancilla=0 and Ancilla=1 cases
+            pos0_str = (''.join(['0'] + padding + pos_vec))[::-1]
+            pos1_str = (''.join(['1'] + padding + pos_vec))[::-1]
+            valid_indices.extend([int(pos0_str, 2), int(pos1_str, 2)])
+        return valid_indices
 
-    def _run_classical_layer(self, inputs, weights, is_trunk: bool):
+    def _run_classical_layer(self, inputs: np.ndarray, all_weights: List[Dict], is_trunk: bool) -> np.ndarray:
+        """
+        Performs a forward pass through a classical network (OrthoNN or ResOrthoNN).
+        Note: This function runs the entire multi-layer network, not just one layer.
 
-        prefix = BRANCH_PREFIX if not is_trunk else TRUNK_PREFIX
+        Args:
+            inputs: Input data for the network.
+            all_weights: A list of weight dictionaries, one for each layer.
+            is_trunk: Flag indicating if this is the trunk network.
 
-        # Setup one layer OrthoNN
-        layers = [inputs.shape[1]]
-        for i in range(len(weights)):
-            layers.append(weights[i][f"{prefix}_hidden_bias"].shape[0])
+        Returns:
+            The output of the classical network.
+        """
+        prefix = TRUNK_PREFIX if is_trunk else BRANCH_PREFIX
+
+        # Define network architecture from weights
+        layer_dims = [inputs.shape[1]]
+        for weights in all_weights:
+            layer_dims.append(weights[f"{prefix}_hidden_bias"].shape[0])
 
         # Doesn't matter which layer you get it from, -1 is arbitrary
-        layers.append(weights[-1][f"{prefix}_output_bias"].shape[0])
+        layer_dims.append(all_weights[-1][f"{prefix}_output_bias"].shape[0])
 
-        net = None
+        # Instantiate the correct network type
         if self.config.residual:
-            net = ResOrthoNN(layers, activation='silu')
+            net = ResOrthoNN(layer_dims, activation='silu')
         else:
-            net = OrthoNN(layers, activation='silu')
+            net = OrthoNN(layer_dims, activation='silu')
 
-        for i in range(len(weights)):
-            net.hidden_layers[i].thetas.data = torch.from_numpy(weights[i][f"{prefix}_hidden_thetas"]).float()
-            net.hidden_layers[i].bias.data = torch.from_numpy(weights[i][f"{prefix}_hidden_bias"]).float()
+        # Load weights into the network
+        for i, weights in enumerate(all_weights):
+            net.hidden_layers[i].thetas.data = torch.from_numpy(weights[f"{prefix}_hidden_thetas"]).float()
+            net.hidden_layers[i].bias.data = torch.from_numpy(weights[f"{prefix}_hidden_bias"]).float()
 
         # Again, layer index does not matter
-        net.output_layer.weight.data = torch.from_numpy(weights[-1][f"{prefix}_output_weight"]).float()
-        net.output_layer.bias.data = torch.from_numpy(weights[-1][f"{prefix}_output_bias"]).float()
+        net.output_layer.weight.data = torch.from_numpy(all_weights[-1][f"{prefix}_output_weight"]).float()
+        net.output_layer.bias.data = torch.from_numpy(all_weights[-1][f"{prefix}_output_bias"]).float()
 
-        output = net(torch.from_numpy(inputs).float()).cpu().detach().numpy()
+        # Perform forward pass
+        with torch.no_grad():
+            output = net(torch.from_numpy(inputs).float()).cpu().numpy()
+
         return silu(output) if is_trunk else output
 
+    # -Optional helper for GPU temp management
+    def _wait_for_gpu_cooldown(self):
+        """
+        Monitors GPU temperature and pauses execution if it exceeds MAX_GPU_TEMP.
+        This is an optional utility that can be called within processing loops.
+        """
+        gpu_temp = get_gpu_temp(self.config.target_gpu)
+        while gpu_temp is not None and gpu_temp > MAX_GPU_TEMP:
+            # The following lock file logic can be used for multi-process coordination
+            # lock_file = f"/tmp/gpu{self.config.target_gpu}.lock"
+            # with open(lock_file, "w") as f:
+            #     f.write(str(os.getpid()))
 
-    # SPQC stuffs
+            logging.warning(
+                f"GPU temp {gpu_temp}°C exceeds max {MAX_GPU_TEMP}°C. Pausing for {GPU_CHECK_INTERVAL}s...")
+            time.sleep(GPU_CHECK_INTERVAL)
+            gpu_temp = get_gpu_temp(self.config.target_gpu)
+
+            # if os.path.exists(lock_file):
+            #     os.remove(lock_file)
+
+    ###############################################################################
+    # WARNING!
+    # -----------------------------------------------------------------------------
+    # The code below executes ensembles as superposed parameterized quantum circuits
+    # as described in Patapovish et al. (2025).
+    #
+    # NOTE: This feature is experimental and unupdated.
+    ###############################################################################
+
+    # --- SPQC stuffs ---
     def _load_ensemble_parameters(self, model_dirs: List[Path], layer: int) -> Dict[str, Dict]:
         """Loads and aggregates parameters from all models in an ensemble."""
         all_params = [load_weights(m, layer=layer) for m in model_dirs]
@@ -485,7 +608,6 @@ class SimulationRunner:
             "final_bias": np.array([p["final_bias"] for p in all_params])
         }
         return aggregated
-
 
     def _run_ensemble_spqc(self):
         """Executes the simulation for an entire ensemble using a single SPQC circuit."""
@@ -511,9 +633,7 @@ class SimulationRunner:
         # Find the last layer
         last_layer_num = max(layer_numbers)
 
-
         print(f"Loading parameters for {len(model_dirs)} models from {ensemble_dir}")
-
 
         def execute_spqc(data: str, last_layer_num: int):
 
@@ -562,7 +682,6 @@ class SimulationRunner:
                     if i != last_layer_num:
                         branch_outputs = np.mean(branch_outputs, axis=0)
 
-
                 if not self.config.classical_trunk:
                     trunk_outputs = self._run_spqc_quantum_layer(
                         inputs=inputs[1],
@@ -584,7 +703,6 @@ class SimulationRunner:
                 # Set up for next iteration
                 inputs = (branch_outputs, trunk_outputs)
 
-
             if self.config.classical_branch:
                 branch_outputs = np.array(branch_outputs_classic)
 
@@ -597,7 +715,6 @@ class SimulationRunner:
                 final_preds.append(pred)
 
             return np.array(final_preds)
-
 
         cal_outputs = execute_spqc(data="calibration", last_layer_num=last_layer_num)
 
@@ -656,7 +773,6 @@ class SimulationRunner:
 
         return np.array(all_outputs)
 
-
     def _build_spqc_circuit(self, x_input, n_in, n_out, thetas, loader_gate, loader_inv_gate, cost_check=False):
         """Builds one SPQC circuit for a single input vector."""
         x_input_stable = x_input.copy()
@@ -686,10 +802,8 @@ class SimulationRunner:
             circ.save_statevector('state')
         return transpile(circ, self.simulator, optimization_level=1)
 
-
     def _process_spqc_output(self, idx, results, n_in, n_out, params, last_layer, is_trunk):
         """Processes the combined statevector from an SPQC circuit run."""
-
 
         # Get probabilities if noisy simulation
         if self.config.noise > 0.0:
@@ -785,17 +899,64 @@ def main():
     parser.add_argument("--override", nargs='*', help="Overrides in key=value format (e.g., n_jobs=8 seed=42)")
     args = parser.parse_args()
 
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     config_path = Path("configs/simulation") / (args.config + ".yaml")
     config = load_config(str(config_path))
-    apply_overrides(config, args.override)
+
+    if args.override:
+        apply_overrides(config, args.override)
 
     set_seeds(config.seed)
 
-    # REFACTOR: The main logic is now encapsulated in the runner
     runner = SimulationRunner(config)
     runner.run()
-    print("Simulation finished.")
-
 
 if __name__ == "__main__":
     main()
+
+
+# USEFUL CODE
+
+# PROCESSING FOR REALISTIC SIMULATION
+"""
+if self.config.mode == 'shots':
+
+    # Get measurement counts directly (from repeated noisy shots)
+    counts_dict = results.get_counts(idx)
+    counts = np.zeros(2 ** (max(n_in, n_out) + 1))  # Total number of basis states
+
+    # Convert bitstrings to integer indices
+    for bitstr, count in counts_dict.items():
+        index = int(bitstr.replace(' ', ''), 2)
+        counts[index] = count
+
+    if self.config.noise > 0.0:
+
+        # Error mitigation
+        valid_indices = []
+        for i in range(n_out):
+            pos_vec = ['0'] * n_out
+            pos_vec[i] = '1'
+            pos0_str = (''.join(['0'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
+            pos1_str = (''.join(['1'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
+            valid_indices.extend([int(pos0_str, 2), int(pos1_str, 2)])
+
+        invalid_indices = np.setdiff1d(np.arange(len(counts)), valid_indices)
+        counts[invalid_indices] = 0
+
+        state_probs = counts / np.sum(counts)
+
+    else:
+        # Ideal + shots: sample from ideal probabilities
+        state_probs = counts / self.config.shots
+
+else:  # ideal + analytic
+    if self.config.noise > 0.0:
+        probabilities = results.data(idx)['density_matrix'].data.diagonal().real
+    else:
+        statevector = np.real(results.data(idx)['state'].data)
+        probabilities = statevector ** 2
+
+    state_probs = probabilities
+"""

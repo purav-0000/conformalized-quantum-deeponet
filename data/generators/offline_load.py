@@ -1,304 +1,291 @@
-# scripts/preprocess_vqp_data.py
-
 import argparse
 import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 import secrets
+from typing import List, Tuple, Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from scipy.interpolate import interp1d
 from scipy.signal import butter, filtfilt
-from sklearn.model_selection import train_test_split
 
+from data.generators.offline_voltage import _perform_fourier_analysis
 from src.utils.common import apply_overrides
 
-# --- Configuration Dataclass ---
+
+# --- Constants ---
+
+INPUT_DIR = Path("data/raw_data/load")
+OUTPUT_DIR = Path("data/processed_data/offline_load")
+
+
+# --- Configuration ---
 
 @dataclass
 class Config:
-    """Configuration for VQP data preprocessing."""
-    # Paths
-    source_data_dir: str = "data/raw_data/load"
-    output_data_dir: str = "data/processed_data/offline_load"
 
-    # Data Source
+    # Data Source Keys
     input_variable_key: str = 'V'
     output_variable_key: str = 'P'
 
     # Preprocessing Hyperparameters
-    # None sets to full domain
-    time_domain_limits: list[float] = field(default_factory=lambda: [0.0, 10.0])
+    time_domain_limits: List[float] = field(default_factory=lambda: [0.0, 10.0])
     filter_strength_divisor: float = 20.0
-    input_resolution: int = 100
-    output_resolution: int = 30
+    filter_input_signal: bool = False  # Allows enabling/disabling filtering on the input
+    input_resolution: int = 30
+    output_resolution: int = 100
 
     # Splitting Ratios
     train_split: float = 0.8
     cal_split: float = 0.1
-    test_split: float = 0.1
+    # Test split is implicitly calculated as 1.0 - train_split - cal_split
 
     # Reproducibility & Debugging
-    random_seed: int = field(default_factory=lambda: secrets.randbits(32))
+    seed: int = field(default_factory=lambda: secrets.randbits(32))
     verbose: bool = False
 
 
 # --- Utility Functions ---
 
 def load_config(yaml_path: str) -> Config:
-    """Loads configuration from a YAML file."""
-    if not os.path.exists(yaml_path):
-        raise FileNotFoundError(f"YAML config file not found at: {yaml_path}")
     with open(yaml_path, "r") as f:
         data = yaml.safe_load(f)
     return Config(**data)
 
 
-###########################################################################################
-# NOTE!!!     HERE THE U VARIABLE CORRESPONDS TO THE INPUT
-# NOTE!!!     AND P CORRESPONDS TO THE OUTPUT.
-# NOTE!!!     P IS NOT NECESSARILY ACTIVE POWER BUT CAN ALSO BE REACTIVE POWER (Q)
-###########################################################################################
-
 # --- Core Logic Functions ---
 
-def load_and_slice_data(config: Config) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Loads raw data, selects the correct source file, and slices the time domain."""
-    source_dir = Path(config.source_data_dir)
-    source_file_4001 = source_dir / "data_intersection_res_4001.npz"
-    source_file_2001 = source_dir / "data_intersection_res_2001.npz"
+def _load_and_slice_data(config: Config) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Loads raw data files, downsamples high-res data, and combines them.
 
-    # Load both files
+    Args:
+        config (Config): The configuration object.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: A tuple containing the combined
+        input data, output data, and the unified time grid.
+    """
+    source_file_4001 = INPUT_DIR / "data_intersection_res_4001.npz"
+    source_file_2001 = INPUT_DIR / "data_intersection_res_2001.npz"
+
+    if not source_file_2001.exists() or not source_file_4001.exists():
+        raise FileNotFoundError(f"Required data files not found in {INPUT_DIR}")
+
     data_4001 = np.load(source_file_4001)
     data_2001 = np.load(source_file_2001)
+    logging.info("Combining data from high-resolution and low-resolution sources.")
 
-    # Both files exist: Downsample the 4001 data to the 2001 time grid
-    logging.info(f"Loading and combining data from {source_file_4001} and {source_file_2001}.")
-
-    # Use the low-resolution time grid as the target
     t_target = data_2001['t']
-    U_low_res = data_2001[config.input_variable_key]
-    P_low_res = data_2001[config.output_variable_key]
+    input_low_res = data_2001[config.input_variable_key]
+    output_low_res = data_2001[config.output_variable_key]
 
-    # Get the high-resolution source data that needs downsampling
     t_source = data_4001['t']
-    U_high_res = data_4001[config.input_variable_key]
-    P_high_res = data_4001[config.output_variable_key]
+    input_high_res = data_4001[config.input_variable_key]
+    output_high_res = data_4001[config.output_variable_key]
 
     logging.info("Downsampling high-res data to the low-res time grid via interpolation...")
+    interp_input = interp1d(t_source, input_high_res, axis=1, kind='linear', assume_sorted=True)
+    interp_output = interp1d(t_source, output_high_res, axis=1, kind='linear', assume_sorted=True)
 
-    # Create interpolation functions for the high-res U and P
-    interp_U = interp1d(t_source, U_high_res, axis=1, kind='linear', bounds_error=False, fill_value="extrapolate", assume_sorted=True)
-    interp_P = interp1d(t_source, P_high_res, axis=1, kind='linear', bounds_error=False, fill_value="extrapolate", assume_sorted=True)
+    input_high_res_resampled = interp_input(t_target)
+    output_high_res_resampled = interp_output(t_target)
 
-    # Perform the interpolation to get the downsampled data
-    U_high_res_resampled = interp_U(t_target)
-    P_high_res_resampled = interp_P(t_target)
+    input_combined = np.concatenate([input_high_res_resampled, input_low_res], axis=0)
+    output_combined = np.concatenate([output_high_res_resampled, output_low_res], axis=0)
 
-    # Concatenate along the trajectory axis (axis=0).
-    # We place the (now downsampled) high-res data first for consistency.
-    U_raw = np.concatenate([U_high_res_resampled, U_low_res], axis=0)
-    P_raw = np.concatenate([P_high_res_resampled, P_low_res], axis=0)
-    t_raw = t_target  # The unified, low-resolution time vector
-
-    logging.info(
-        f"Final combined shapes: {config.input_variable_key}={U_raw.shape}, {config.output_variable_key}={P_raw.shape}, t={t_raw.shape}"
-    )
-
-    # Slice time domain
-    logging.info(f"Slicing raw data to time domain: {config.time_domain_limits}s...")
-    limits = config.time_domain_limits
-    assert limits[0] < limits[1], "time_domain_limits must be [min, max]."
-
-    time_mask = (t_raw >= limits[0]) & (t_raw <= limits[1])
-    if not np.any(time_mask):
-        raise ValueError(f"The specified time domain {limits} is outside the data's range.")
-
-    U_raw = U_raw[:, time_mask]
-    P_raw = P_raw[:, time_mask]
-    t_raw = t_raw[time_mask]
-    logging.info(
-        f"New shapes after slicing: {config.input_variable_key}={U_raw.shape}, {config.output_variable_key}={P_raw.shape}, t={t_raw.shape}")
-
-    return U_raw, P_raw, t_raw
+    return input_combined, output_combined, t_target
 
 
-def filter_and_downsample(U_raw: np.ndarray, P_raw: np.ndarray, t_raw: np.ndarray, config: Config):
-    """Applies a low-pass filter and downsamples the data."""
-    logging.info(f"Applying low-pass filter with strength divisor: {config.filter_strength_divisor}...")
-    sampling_interval = t_raw[1] - t_raw[0]
-    sampling_freq = 1 / sampling_interval
+# --- Plotting and debugging ---
+
+def _filter_and_downsample(
+    input_raw: np.ndarray, output_raw: np.ndarray, t_raw: np.ndarray, config: Config
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Applies a low-pass filter and downsamples the data to target resolutions.
+
+    Args:
+        input_raw (np.ndarray): The raw input signal data.
+        output_raw (np.ndarray): The raw output signal data.
+        t_raw (np.ndarray): The time grid for the raw signals.
+        config (Config): The configuration object.
+
+    Returns:
+        Tuple containing filtered and downsampled signals and their time grids.
+    """
+    logging.info("Applying low-pass filter and downsampling...")
+    sampling_freq = 1 / (t_raw[1] - t_raw[0])
     cutoff_freq = sampling_freq / config.filter_strength_divisor
     b, a = butter(4, cutoff_freq, btype='low', fs=sampling_freq)
 
-    # No filtering for input 'V'
-    # U_filtered = filtfilt(b, a, U_raw, axis=1)
-    U_filtered = U_raw
+    input_filtered = filtfilt(b, a, input_raw, axis=1) if config.filter_input_signal else input_raw
+    output_filtered = filtfilt(b, a, output_raw, axis=1)
 
-    P_filtered = filtfilt(b, a, P_raw, axis=1)
+    input_indices = np.linspace(0, input_raw.shape[1] - 1, config.input_resolution, dtype=int)
+    input_downsampled = input_filtered[:, input_indices]
+    t_downsampled_input = t_raw[input_indices]
 
-    logging.info(
-        f"Downsampling {config.input_variable_key} to {config.input_resolution} and {config.output_variable_key} to {config.output_resolution} points..."
-    )
+    output_indices = np.linspace(0, output_raw.shape[1] - 1, config.output_resolution, dtype=int)
+    output_downsampled = output_filtered[:, output_indices]
+    t_downsampled_output = t_raw[output_indices]
 
-    # Downsample input signal (for branch net)
-    u_indices = np.linspace(0, U_raw.shape[1] - 1, config.input_resolution, dtype=int)
-    U_downsampled = U_filtered[:, u_indices]
-    t_downsampled_for_u = t_raw[u_indices]
-
-    # Downsample output signal (for trunk net)
-    # AGAIN, EVERYTHING NAMED FOR P BUT CAN ALSO BE Q
-    p_indices = np.linspace(0, P_raw.shape[1] - 1, config.output_resolution, dtype=int)
-    P_downsampled = P_filtered[:, p_indices]
-    t_downsampled_for_p = t_raw[p_indices]
-
-    return U_filtered, P_filtered, U_downsampled, P_downsampled, t_downsampled_for_u, t_downsampled_for_p
+    return (input_filtered, output_filtered, input_downsampled, output_downsampled,
+            t_downsampled_input, t_downsampled_output)
 
 
-def visualize_sample(U_raw, U_filtered, U_downsampled, t_raw, t_downsampled_for_u,
-                     P_raw, P_filtered, P_downsampled, t_downsampled_for_p,
-                     config: Config, sample_idx=0):
-    """Plots and saves the effect of preprocessing on a single sample trajectory."""
-    plt.figure(figsize=(14, 6))
+def _plot_sample(
+        raw_data: dict, filtered_data: dict, downsampled_data: dict, config: Config, sample_idx: int
+):
+    """
+    Plots and saves the effect of preprocessing on a single sample trajectory.
 
-    # Plot Input Variable (U)
+    Args:
+        raw_data (dict): Dictionary of raw signals and time grids.
+        filtered_data (dict): Dictionary of filtered signals.
+        downsampled_data (dict): Dictionary of downsampled signals and time grids.
+        config (Config): The configuration object.
+        sample_idx (int): The index of the sample to visualize.
+    """
+
+    plt.figure(figsize=(16, 6))
+    key_in, key_out = config.input_variable_key, config.output_variable_key
+
+    # Plot Input Variable
     plt.subplot(1, 2, 1)
-    plt.plot(t_raw, U_raw[sample_idx], color='cyan', label=f'Original {config.input_variable_key}')
-    plt.plot(t_raw, U_filtered[sample_idx], color='blue', label=f'Filtered {config.input_variable_key}')
-    plt.plot(t_downsampled_for_u, U_downsampled[sample_idx], 'bo', label=f'Downsampled {config.input_variable_key}')
-    plt.title(f'{config.input_variable_key} Trajectory #{sample_idx}')
+    plt.plot(raw_data['t'], raw_data['input'][sample_idx], color='cyan', label=f'Original {key_in}')
+    plt.plot(raw_data['t'], filtered_data['input'][sample_idx], color='blue', label=f'Filtered {key_in}')
+    plt.plot(downsampled_data['t_input'], downsampled_data['input'][sample_idx], 'bo', label=f'Downsampled {key_in}')
+    plt.title(f'Input Trajectory #{sample_idx} ({key_in})')
     plt.xlabel('Time (s)')
-    plt.ylabel(config.input_variable_key)
+    plt.ylabel(key_in)
     plt.legend()
     plt.grid(True)
 
     # Plot Output Variable
     plt.subplot(1, 2, 2)
-    plt.plot(t_raw, P_raw[sample_idx], color='orange', alpha=0.7, label=f'Original {config.output_variable_key}')
-    plt.plot(t_raw, P_filtered[sample_idx], color='red', label=f'Filtered {config.output_variable_key}')
-    plt.plot(t_downsampled_for_p, P_downsampled[sample_idx], 'ro', label=f'Downsampled {config.output_variable_key}')
-    plt.title(f'{config.output_variable_key} Trajectory #{sample_idx}')
+    plt.plot(raw_data['t'], raw_data['output'][sample_idx], color='orange', alpha=0.7, label=f'Original {key_out}')
+    plt.plot(raw_data['t'], filtered_data['output'][sample_idx], color='red', label=f'Filtered {key_out}')
+    plt.plot(downsampled_data['t_output'], downsampled_data['output'][sample_idx], 'ro', label=f'Downsampled {key_out}')
+    plt.title(f'Output Trajectory #{sample_idx} ({key_out})')
     plt.xlabel('Time (s)')
-    plt.ylabel(config.output_variable_key)
+    plt.ylabel(key_out)
     plt.legend()
     plt.grid(True)
 
-    plt.tight_layout()
     plt.show()
+    plt.close()
 
 
-# --- Main Orchestration ---
-def run_preprocessing(config: Config):
-    """Executes the full data preprocessing workflow."""
+def run_workflow(config: Config):
+    """
+    Executes the full data preprocessing workflow.
+
+    Args:
+        config (Config): The configuration object containing all parameters.
+    """
     logging.info("Starting data preprocessing...")
-    np.random.seed(config.random_seed)
 
-    # --- 1. Load and Slice ---
-    U_raw, P_raw, t_raw = load_and_slice_data(config)
+    # Load and combine data from source files
+    input_raw, output_raw, t_raw = _load_and_slice_data(config)
 
-    # --- 2. Filter and Downsample ---
-    U_filtered, P_filtered, U_downsampled, P_downsampled, t_u, t_p = filter_and_downsample(
-        U_raw, P_raw, t_raw, config
+    # Slice to the specified time domain
+    limits = config.time_domain_limits
+    time_mask = (t_raw >= limits[0]) & (t_raw <= limits[1])
+    if not np.any(time_mask):
+        raise ValueError(f"The specified time domain {limits} is outside the data's range.")
+
+    input_sliced = input_raw[:, time_mask]
+    output_sliced = output_raw[:, time_mask]
+    t_sliced = t_raw[time_mask]
+
+    # Filter and downsample the sliced data
+    (input_filtered, output_filtered, input_downsampled, output_downsampled,
+     t_input_final, t_output_final) = _filter_and_downsample(
+        input_sliced, output_sliced, t_sliced, config
     )
 
-    # --- 3. Structure for DeepONet ---
-    logging.info("Structuring data for vectorized DeepONet...")
-    X0_branch = U_downsampled.astype(np.float32)
-    X1_trunk = t_p.reshape(-1, 1).astype(np.float32)
-    Y_target = P_downsampled.astype(np.float32)
-
+    # Structure data for DeepONet
+    logging.info("Structuring data for DeepONet...")
+    X0_branch = input_downsampled.astype(np.float32)
+    X1_trunk = t_output_final.reshape(-1, 1).astype(np.float32)
+    Y_target = output_downsampled.astype(np.float32)
     logging.info(f"Final shapes: X0={X0_branch.shape}, X1={X1_trunk.shape}, Y={Y_target.shape}")
-    assert X0_branch.shape[0] == Y_target.shape[0], "Batch sizes of branch and target must match."
-    assert X1_trunk.shape[0] == Y_target.shape[1], "Trunk coordinates must match number of output points."
 
-    # --- 4. Split Data ---
-    logging.info("Splitting data into train, validation, calibration, and test sets...")
+    # For cross-checking fourier features in model
+    # _perform_fourier_analysis(Y_target, X1_trunk)
+
+    # Split data into train, calibration, and test sets
     num_trajectories = X0_branch.shape[0]
-    rng = np.random.default_rng(config.random_seed)
-    shuffled_indices = rng.permutation(num_trajectories)
+    shuffled_indices = np.random.permutation(num_trajectories)
 
     # Calculate the end-points for train and calibration sets
     train_end = int(num_trajectories * config.train_split)
     cal_end = train_end + int(num_trajectories * config.cal_split)
 
-    splits = {
+    splits: Dict[str, np.ndarray] = {
         "train": shuffled_indices[:train_end],
         "calibration": shuffled_indices[train_end:cal_end],
         "test": shuffled_indices[cal_end:],
     }
 
-    # --- 5. Save Processed Data ---
-
-    # Suffix P or Q for output directory
-    output_dir = Path(config.output_data_dir + "_" + config.output_variable_key)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    logging.info(f"Saving processed files to {output_dir}...")
-
-    for split_name, split_indices in splits.items():
-        logging.info(f"Processing {split_name} split with {len(split_indices)} trajectories.")
-        filename = output_dir / f'{split_name}.npz'
-
-        save_dict = {
-            'X0': X0_branch[split_indices],
-            'X1': X1_trunk,  # Trunk is shared across all samples
-            'y': Y_target[split_indices],
-            'X0_plot': t_u
-        }
-
-        np.savez(filename, **save_dict)
-
-    logging.info("All data splits saved successfully.")
-
-    # --- 6. Visualize a Sample ---
-    if config.verbose:
-        # Choose a random index from the test set to visualize
-        random_test_trajectory_idx = np.random.choice(splits['test'])
-        visualize_sample(
-            U_raw, U_filtered, U_downsampled, t_raw, t_u,
-            P_raw, P_filtered, P_downsampled, t_p,
-            config, sample_idx=random_test_trajectory_idx
+    # Save the final datasets
+    for name, idx in splits.items():
+        logging.info(f"Processing '{name}' split with {len(idx)} signals.")
+        save_path = Path(str(OUTPUT_DIR) + "_" + config.output_variable_key) / f"{name}.npz"
+        np.savez_compressed(
+            save_path,
+            X0=X0_branch[idx],
+            X1=X1_trunk,
+            y=Y_target[idx],
+            X0_plot=t_input_final
         )
+    logging.info("All files saved successfully!")
 
-    logging.info("\nPreprocessing complete!")
+    # Visualize a sample if in verbose mode
+    if config.verbose:
+        sample_idx = np.random.choice(splits['test'])
+        _plot_sample(
+            raw_data={'input': input_sliced, 'output': output_sliced, 't': t_sliced},
+            filtered_data={'input': input_filtered, 'output': output_filtered},
+            downsampled_data={'input': input_downsampled, 'output': output_downsampled,
+                              't_input': t_input_final, 't_output': t_output_final},
+            config=config,
+            sample_idx=sample_idx
+        )
 
 
 # --- Entry Point ---
+
 def main():
-    """Parses arguments, loads config, and starts the preprocessing."""
-    parser = argparse.ArgumentParser(description="Preprocess VQP data for DeepONet.")
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="default_offline_load",
-        help="Name of the config file (without .yaml) in the 'configs' directory."
+
+    parser = argparse.ArgumentParser(
+        description="Generate load prediction data for DeepONet.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument(
-        "--override",
-        nargs='*',
-        help="Optional config overrides in key=value format (e.g., input_resolution=150)."
-    )
+    parser.add_argument("--config", type=str, default="default_offline_load",
+                        help="Name of the config file in 'configs/data_generation'")
+    parser.add_argument("--override", nargs='*', help="Optional overrides in key=value format")
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    config_path = os.path.join("configs/data_generation", args.config + ".yaml")
-    try:
-        config = load_config(config_path)
-    except FileNotFoundError as e:
-        logging.error(e)
-        return
+    # Config and overrides
+    config_path = Path("configs/data_generation") / f"{args.config}.yaml"
+    config = load_config(str(config_path)) if args.config else Config()
 
     if args.override:
         apply_overrides(config, args.override)
 
-    run_preprocessing(config)
+    # Dir creation
+    os.makedirs(Path(str(OUTPUT_DIR) + "_"  + config.output_variable_key), exist_ok=True)
+
+    # Set the seed for reproducibility
+    np.random.seed(config.seed)
+    run_workflow(config)
 
 
 if __name__ == '__main__':

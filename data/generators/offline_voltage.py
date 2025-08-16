@@ -1,55 +1,70 @@
-# Standard imports
 import argparse
-import logging
-import os
 from dataclasses import dataclass, field
+from enum import Enum
+import logging
+from pathlib import Path
 import secrets
-from typing import Optional
+from typing import Dict, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-import yaml
 from scipy import interpolate
+import yaml
+
+from tqdm import tqdm
 
 from src.utils.common import apply_overrides
 
 
+# --- Constants ---
+
+INPUT_FILE = Path("data/raw_data/voltage_dataset.npz")
+OUTPUT_DIR = Path("data/processed_data/offline_voltage")
+
 # --- Configuration ---
+
+class FilterMode(Enum):
+    """Defines how the variance filter should operate."""
+    KEEP_LOWEST = "keep_lowest"
+    KEEP_HIGHEST = "keep_highest"
+
 
 @dataclass
 class Config:
-    # Data Paths
-    input_data_path: str = "data/raw_data/voltage_dataset.npz"
-    output_data_dir: str = "data/processed_data/offline_voltage"
 
     # Raw Data Parameters
     num_nodes: int = 7
     num_data_per_client: int = 407
 
     # DeepONet Data Generation Parameters
-    n_sensors: int = 100
-    nLocs: int = 30
+    n_sensors: int = 100       # Number of sensors for the branch network
+    n_locs: int = 30           # Number of locations for the trunk network
     memory_ranging: float = 0.4
     max_time: float = 8.0
     max_clear: float = 0.9
 
     # Splitting Ratios
-    train_split: float = 0.8
-    cal_split: float = 0.1
-    test_split: float = 0.1
+    train: float = 0.8
+    calibration: float = 0.1
+    # Test split is implicitly (1 - train_split - cal_split)
+
+    # Variance Filtering
+    frequency_filter_percentile: float = 1.0     # 1.0 means no filtering
+    filter_mode: FilterMode = FilterMode.KEEP_HIGHEST
 
     # Reproducibility and Debugging
-    rng1: Optional[int] = field(default_factory=lambda: secrets.randbits(32))
-    rng2: Optional[int] = field(default_factory=lambda: secrets.randbits(32))
+    seed: int = field(default_factory=lambda: secrets.randbits(32))
     verbose: bool = False
 
-    # Filters dataset, keeping only lowest variance parcentile
-    variance_filter_percentile: float = 1.0
-    variance_filter_mode: str = "highest"
+    def __post_init__(self):
+        """Ensure string values from YAML/overrides are converted to Enum."""
+        if isinstance(self.filter_mode, str):
+            self.filter_mode = FilterMode(self.filter_mode)
 
+
+# --- Utilities ---
 
 def load_config(yaml_path: str) -> Config:
-    """Loads configuration from a YAML file."""
     with open(yaml_path, "r") as f:
         data = yaml.safe_load(f)
     return Config(**data)
@@ -57,68 +72,101 @@ def load_config(yaml_path: str) -> Config:
 
 # --- Core Logic Functions ---
 
-def raw_data_processor(voltage_data, clear_time, config: Config):
-    """
-    Loads raw client data and concatenates it into a single centralized dataset.
-    """
-    client_voltage_data = {}
 
-    # Split by client
+def _load_and_process_raw_data(config: Config) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Loads raw data, shuffles it, and centralizes the client data.
+
+    Args:
+        config (Config): The configuration object.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: A tuple of the centralized voltage and
+        clearing time datasets.
+    """
+    logging.info(f"Loading raw data from {INPUT_FILE}")
+    raw_data = np.load(INPUT_FILE)
+    voltage_data = raw_data['voltage_data']
+    clear_time = raw_data['clear_time']
+
+    # Shuffle the entire dataset before processing
+    indices = np.random.permutation(voltage_data.shape[0])
+    voltage_data = voltage_data[indices]
+    clear_time = clear_time[indices]
+
+    # Storing client-by-client into one centralized array.
+    client_voltages = []
     for client in range(config.num_nodes):
         start_idx = client * config.num_data_per_client
-        end_idx = (client + 1) * config.num_data_per_client - 1
-        client_voltage_data[client] = voltage_data[:, start_idx:end_idx]
-        logging.info(f"Size of raw data for client {client} is {client_voltage_data[client].shape}")
+        # The original script had -1 for some reason added to end_idx
+        end_idx = (client + 1) * config.num_data_per_client
+        client_voltages.append(voltage_data[:, start_idx:end_idx])
 
-    # Recenterallize the dataset
-    central_voltage = np.concatenate([client_voltage_data[c] for c in range(config.num_nodes)], axis=0)
-
-    # Tile clear time to match central_voltage
+    central_voltage = np.concatenate(client_voltages, axis=0)
     central_clear_time = np.tile(clear_time, config.num_nodes)
 
-    logging.info(f"Size of centralized voltage dataset is {central_voltage.shape}")
-    logging.info(f"Size of centralized clear time dataset is {central_clear_time.shape}")
+    logging.info(f"Centralized voltage dataset shape: {central_voltage.shape}")
     return central_voltage, central_clear_time
 
-# Perhaps train_database is a misnomer here
-def creating_DeepONet_dataset_cartesian(signals_database, clearing_time, config: Config):
-    """
-    Creates a dataset suitable for dde.data.TripleCartesianProd.
-    """
-    np.random.seed(config.rng1)
-    num_signals = signals_database.shape[0]
-    original_time = np.linspace(-0.1, 12.0, num=signals_database.shape[1])
 
-    U_data = np.zeros((num_signals, config.n_sensors))
-    Y_data = np.zeros((config.nLocs, 1))
-    G_data = np.zeros((num_signals, config.nLocs))
+def _prepare_deeponet_data(
+        signals_db: np.ndarray, clearing_time: np.ndarray, config: Config
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Creates a dataset suitable for a Cartesian Product DeepONet.
 
+    This function interpolates signals and samples them at specified branch
+    and trunk locations.
+
+    Args:
+        signals_db (np.ndarray): The database of input signals (e.g., voltage).
+        clearing_time (np.ndarray): The clearing time for each signal.
+        config (Config): The configuration object.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: A tuple containing:
+        - U_data: Branch network inputs.
+        - Y_data: Trunk network inputs (shared locations).
+        - G_data: Network outputs.
+        - sensor_locs: The locations of the branch sensors.
+    """
+    num_signals = signals_db.shape[0]
+    original_time = np.linspace(-0.1, 12.0, num=signals_db.shape[1])
+
+    # Define trunk locations (Y_data)
     trunk_time_start = config.max_clear + config.memory_ranging
     trunk_time_end = config.max_time
-    fixed_trunk_locations = np.linspace(trunk_time_start, trunk_time_end, config.nLocs)
-    Y_data[:, 0] = fixed_trunk_locations
+    fixed_trunk_locations = np.linspace(trunk_time_start, trunk_time_end, config.n_locs)
+    Y_data = fixed_trunk_locations.reshape(-1, 1)
 
+    # Define branch sensor locations
     time_u_full = np.linspace(-0.1, config.max_clear + config.memory_ranging + (0.1 * config.memory_ranging), num=10000)
-    sensors_locs = np.linspace(time_u_full[0], time_u_full[-1], config.n_sensors)
+    sensor_locs = np.linspace(time_u_full[0], time_u_full[-1], config.n_sensors)
 
-    # Plot these indices if verbose is true
-    plot_indices_for_verbose = np.random.randint(num_signals, size=5)
-    for i in range(num_signals):
-        interpolated_signal = interpolate.interp1d(original_time, signals_database[i], copy=False, assume_sorted=True)
+    U_data = np.zeros((num_signals, config.n_sensors))
+    G_data = np.zeros((num_signals, config.n_locs))
+
+    plot_indices_for_verbose = np.random.randint(0, num_signals, size=3)
+    for i in tqdm(range(num_signals), desc="Preparing DeepONet data"):
+        # Create an interpolator for the full, original signal
+        interpolated_signal = interpolate.interp1d(original_time, signals_db[i], copy=False, assume_sorted=True)
+
+        # Create the branch input signal `u` by masking the original signal
         cut_section = clearing_time[i] + config.memory_ranging
         u_full_values = interpolated_signal(time_u_full)
-        # u_full_values[time_u_full > cut_section] = 0
 
+        # Sample the branch and trunk data
         f_u = interpolate.interp1d(time_u_full, u_full_values, copy=False, assume_sorted=True)
-        U_data[i, :] = f_u(sensors_locs)
+        U_data[i, :] = f_u(sensor_locs)
         G_data[i, :] = interpolated_signal(fixed_trunk_locations)
 
+        # Verbose plotting
         if config.verbose and i in plot_indices_for_verbose:
             plt.figure(figsize=(10, 6))
-            plt.plot(original_time, signals_database[i], 'm', label="Original Voltage Signal")
+            plt.plot(original_time, signals_db[i], 'm', label="Original Voltage Signal")
             plt.plot(time_u_full, u_full_values, 'b', label="Masked Input `u`")
-            plt.plot(sensors_locs, U_data[i, :], '*k', ms=8, label=f"{config.n_sensors} Branch Sensor Values")
-            plt.plot(fixed_trunk_locations, G_data[i, :], '.g', ms=10, label=f"{config.nLocs} Output G_values")
+            plt.plot(sensor_locs, U_data[i, :], '*k', ms=8, label=f"{config.n_sensors} Branch Sensor Values")
+            plt.plot(fixed_trunk_locations, G_data[i, :], '.g', ms=10, label=f"{config.n_locs} Output G_values")
             plt.axvline(x=cut_section, color='r', ls='--', label=f"Cut Section for signal {i}")
             plt.title(f"Data Generation Check (Cartesian Product) - Signal {i}")
             plt.xlabel("Time")
@@ -127,244 +175,337 @@ def creating_DeepONet_dataset_cartesian(signals_database, clearing_time, config:
             plt.grid(True)
             plt.show()
 
-    logging.info('Generated data shapes for Cartesian Product Model:')
-    logging.info(f'U_data (Branch) shape: {U_data.shape}')
-    logging.info(f'Y_data (Trunk) shape:  {Y_data.shape}')
-    logging.info(f'G_train (Output) shape: {G_data.shape}')
+    logging.info(
+        f"U_data (Branch) shape: {U_data.shape}, Y_data (Trunk) shape: {Y_data.shape}, G_data (Output) shape: {G_data.shape}")
+    return U_data, Y_data, G_data, sensor_locs
 
-    # Frequency analysis is now directly included in src/utils/data_handling
-    # However, this snippet may be useful in the future
+
+def _split_and_save_data(
+    u_data: np.ndarray, y_data: np.ndarray, g_data: np.ndarray, sensor_locs: np.ndarray, config: Config
+):
     """
-    logging.info("Analyzing frequencies in the G_train output signals...")
-    num_signals, n_locs = G_train.shape
+    Splits the dataset into train, calibration, and test sets and saves them.
 
-    if n_locs > 1:
-        # Determine the sampling interval from the trunk locations
-        sampling_interval = fixed_trunk_locations[1] - fixed_trunk_locations[0]
+    Args:
+        u_data (np.ndarray): Branch data.
+        y_data (np.ndarray): Trunk data.
+        g_data (np.ndarray): Output data.
+        sensor_locs (np.ndarray): Branch sensor locations for plotting.
+        config (Config): The configuration object.
+    """
+    logging.info(f"Splitting and saving the data to {OUTPUT_DIR}")
 
-        # Calculate the frequencies corresponding to the FFT output
-        # We only need the positive frequencies for the one-sided power spectrum
-        frequencies = np.fft.fftfreq(n_locs, d=sampling_interval)[:n_locs // 2]
+    num_signals = u_data.shape[0]
+    indices = np.random.permutation(num_signals)
 
-        # Accumulate power spectra from all signals
-        total_power_spectrum = np.zeros(n_locs // 2)
-        for i in range(num_signals):
-            signal = G_train[i, :]
-            fft_values = np.fft.fft(signal)
-            # Compute power (squared magnitude) for positive frequencies
-            power = np.abs(fft_values[0:n_locs // 2]) ** 2
-            total_power_spectrum += power
+    train_end = int(num_signals * config.train)
+    cal_end = train_end + int(num_signals * config.calibration)
 
-        # Average the power spectrum across all signals
-        average_power_spectrum = total_power_spectrum / num_signals
+    splits: Dict[str, np.ndarray] = {
+        "train": indices[:train_end],
+        "calibration": indices[train_end:cal_end],
+        "test": indices[cal_end:],
+    }
 
-        # Plot the averaged power spectrum for visual inspection
+    for name, idx in splits.items():
+        logging.info(f"Processing '{name}' split with {len(idx)} signals.")
+        save_path = OUTPUT_DIR / f'{name}.npz'
+        np.savez_compressed(
+            save_path,
+            X0=u_data[idx].astype(np.float32),
+            X1=y_data.astype(np.float32),
+            y=g_data[idx].astype(np.float32),
+            X0_plot=sensor_locs.astype(np.float32)
+        )
+    logging.info("All files saved successfully!")
+
+
+# --- Plotting and Debugging ---
+
+def _filter_by_frequency(
+        u_data: np.ndarray, g_data: np.ndarray, config: Config, y_data: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Filters the dataset based on the spectral centroid of the output signals.
+
+    The spectral centroid represents the "center of mass" of the signal's
+    power spectrum. Signals with lower centroids are dominated by low
+    frequencies, while signals with higher centroids have more high-frequency
+    content. This provides a continuous metric for effective filtering.
+
+    Args:
+        u_data (np.ndarray): Branch data.
+        g_data (np.ndarray): Output data.
+        config (Config): The configuration object.
+        y_data (np.ndarray): Trunk data (for plotting and sampling interval).
+
+    Returns:
+        The filtered u_data and g_data.
+    """
+    if not (0.0 < config.frequency_filter_percentile < 1.0):
+        logging.info("No frequency filtering applied (percentile is not between 0.0 and 1.0).")
+        return u_data, g_data
+
+    # Calculate the dominant frequency for each signal
+    num_signals, n_locs = g_data.shape
+
+    # Calculate sampling interval from the trunk coordinates
+    unique_coords = np.unique(y_data, axis=0)
+    sampling_interval = unique_coords[1, 0] - unique_coords[0, 0]
+
+    # Pre-calculate frequency bins and Hann window
+    frequencies = np.fft.fftfreq(n_locs, d=sampling_interval)[:n_locs // 2]
+    hann_window = np.hanning(n_locs)
+    spectral_centroids = np.zeros(num_signals)
+
+    logging.info("Calculating dominant frequency for each signal...")
+    for i in range(num_signals):
+        signal = g_data[i, :]
+        windowed_signal = signal * hann_window
+        fft_values = np.fft.fft(windowed_signal)
+        power_spectrum = np.abs(fft_values[:n_locs // 2]) ** 2
+
+        # Calculate spectral centroid: sum(freq * power) / sum(power)
+        # Add a small epsilon to avoid division by zero for silent signals
+        spectral_centroids[i] = np.sum(frequencies * power_spectrum) / (np.sum(power_spectrum) + 1e-9)
+
+    # Apply the percentile filter
+    if config.filter_mode == FilterMode.KEEP_LOWEST:
+        threshold = np.quantile(spectral_centroids, config.frequency_filter_percentile)
+        keep_mask = spectral_centroids <= threshold
+        percentage = config.frequency_filter_percentile * 100
+        desc = f"KEEPING samples with the LOWEST {percentage:.0f}% dominant frequencies"
+    else:  # KEEP_HIGHEST
+        threshold = np.quantile(spectral_centroids, 1 - config.frequency_filter_percentile)
+        keep_mask = spectral_centroids >= threshold
+        percentage = config.frequency_filter_percentile * 100
+        desc = f"KEEPING samples with the HIGHEST {percentage:.0f}% dominant frequencies"
+
+    logging.info(f"Filtering dataset to {desc}.")
+
+    if config.verbose:
+        _plot_frequency_filter_diagnostics(
+            spectral_centroids, threshold, desc, g_data, keep_mask, y_data
+        )
+
+    original_count = u_data.shape[0]
+    filtered_u = u_data[keep_mask]
+    filtered_g = g_data[keep_mask]
+    logging.info(f"Filtering complete. Kept {filtered_u.shape[0]} of {original_count} samples.")
+    return filtered_u, filtered_g
+
+
+def _plot_frequency_filter_diagnostics(
+        metric_values: np.ndarray, threshold: float, desc: str, g_unfiltered: np.ndarray,
+        mask: np.ndarray, y_data: np.ndarray
+):
+    """
+    Saves diagnostic plots for the frequency-based filtering step.
+
+    Args:
+        metric_values (np.ndarray): Array of the metric (e.g., spectral centroid) for each signal.
+        threshold (float): The metric value used as the filter cutoff.
+        desc (str): A description of the filtering action for plot titles.
+        g_unfiltered (np.ndarray): The complete, unfiltered output data array.
+        mask (np.ndarray): The boolean mask indicating which samples were kept.
+        y_data (np.ndarray): The trunk coordinates for the x-axis of the plots.
+    """
+
+    # Distribution of dominant frequencies
+    plt.figure(figsize=(10, 6))
+    plt.hist(metric_values, bins=100, alpha=0.75, label="Spectral Centroid Distribution")
+    plt.axvline(x=threshold, color='r', ls='--', lw=2, label=f"Threshold at {threshold:.2f} Hz")
+    plt.title(f"Distribution of Spectral Centroids ({desc})")
+    plt.xlabel("Spectral Centroid metric")
+    plt.ylabel("Number of Samples")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+    plt.close()
+
+    # Examples of kept and discarded signals
+    kept_indices = np.where(mask)[0]
+    discarded_indices = np.where(~mask)[0]
+
+    for i in range(min(3, len(kept_indices))):
+        idx = kept_indices[i]
+        plt.figure(figsize=(10, 6))
+        plt.plot(y_data, g_unfiltered[idx, :], '.-g')
+        plt.title(f"KEPT Sample (Index: {idx}) | Spectral Centroid metric: {metric_values[idx]:.2f}")
+        plt.xlabel("Time")
+        plt.ylabel("Voltage")
+        plt.grid(True)
+        plt.show()
+        plt.close()
+
+    for i in range(min(3, len(discarded_indices))):
+        idx = discarded_indices[i]
+        plt.figure(figsize=(10, 6))
+        plt.plot(y_data, g_unfiltered[idx, :], '.-r')
+        plt.title(f"DISCARDED Sample (Index: {idx}) | Spectral Centroid metric: {metric_values[idx]:.2f}")
+        plt.xlabel("Time")
+        plt.ylabel("Voltage")
+        plt.grid(True)
+        plt.show()
+        plt.close()
+
+
+def _perform_fourier_analysis(
+    y_train: np.ndarray, y_data: np.ndarray
+):
+    """
+    Performs a Fourier analysis on the training set targets.
+
+    Args:
+        y_train (np.ndarray): The training target signals.
+        y_data (np.ndarray): The trunk coordinates (used to find sampling interval).
+    """
+    logging.info("Verbose mode: Performing Fourier analysis on training set targets...")
+
+    # Calculate Sampling Interval from Trunk Coordinates
+    unique_coords = np.unique(y_data, axis=0)
+    if len(unique_coords) < 2:
+        logging.warning("Not enough unique trunk coordinates to determine sampling interval.")
+        return
+    sampling_interval = unique_coords[1, 0] - unique_coords[0, 0]
+
+    # Compute Average Power Spectrum with Windowing
+    num_signals, n_locs = y_train.shape
+    frequencies = np.fft.fftfreq(n_locs, d=sampling_interval)[:n_locs // 2]
+    total_power_spectrum = np.zeros(n_locs // 2)
+
+    power_spectra_all_signals = np.zeros((num_signals, n_locs // 2))
+
+    hann_window = np.hanning(n_locs)
+
+    for i in range(num_signals):
+        signal = y_train[i, :]
+
+        windowed_signal = signal * hann_window
+        fft_values = np.fft.fft(windowed_signal)
+        power = np.abs(fft_values[:n_locs // 2]) ** 2
+        power_spectra_all_signals[i] = power
+        total_power_spectrum += power
+
+    avg_power_spectrum = total_power_spectrum / num_signals
+
+    # Find and Log Dominant Frequencies
+    # Exclude the DC component (index 0) for finding dominant peaks
+    top_indices = np.argsort(avg_power_spectrum[1:])[-5:][::-1] + 1
+    dominant_freqs = frequencies[top_indices]
+    logging.info(f"Top 5 dominant frequencies in training set: {np.round(dominant_freqs, 2)} Hz")
+
+    # Plot the results for verification
+    with plt.style.context('seaborn-v0_8-whitegrid'):
+        # Plot the power spectrum
         plt.figure(figsize=(12, 6))
-        plt.plot(frequencies[1:], average_power_spectrum[1:])  # Ignore DC component for better scaling
-        plt.title('Averaged Power Spectrum of Output Signals (G_train)')
+        plt.plot(frequencies[1:], avg_power_spectrum[1:])
+        plt.title('Averaged Power Spectrum (with Hann Window)')
         plt.xlabel('Frequency (Hz)')
         plt.ylabel('Power')
         plt.grid(True)
-        plt.yscale('log')  # Use a log scale to see smaller peaks
+        plt.yscale('log')
         plt.show()
+        plt.close()
 
-        # Identify and log the top 5 dominant frequencies (excluding the DC component)
-        top_indices = np.argsort(average_power_spectrum[1:])[-15:][::-1] + 1
-        dominant_frequencies = frequencies[top_indices]
-        dominant_powers = average_power_spectrum[top_indices]
+        # Plot an example of a windowed signal
+        example_idx = np.random.randint(0, num_signals)
+        plt.figure(figsize=(10, 6))
+        plt.plot(y_data, y_train[example_idx, :], '.-', label='Original Signal')
+        plt.plot(y_data, y_train[example_idx, :] * hann_window, 'r-', label='Signal after Hann Window')
+        plt.title(f"Example of Hann Window Application (Signal #{example_idx})")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Value")
+        plt.grid(True)
+        plt.legend()
+        plt.show()
+        plt.close()
 
-        logging.info("Top 5 Dominant Frequencies in G_train:")
-        for freq, power in zip(dominant_frequencies, dominant_powers):
-            logging.info(f"  - Frequency: {freq:.2f} Hz, Power: {power:.2e}")
-    else:
-        logging.warning("Not enough data points in G_train to perform frequency analysis.")
+    # Might be of use in the future
+    # Investigate the Highest Frequency Contributors
+    """
+    # Find the index of the highest frequency value within the dominant_freqs array
+    idx_of_highest_freq = np.argmax(dominant_freqs)
+
+    # Use that index to get the actual highest frequency value
+    highest_freq = dominant_freqs[idx_of_highest_freq]
+
+    # Use that same index to get the corresponding bin index from the original power spectrum
+    highest_freq_bin_index = top_indices[idx_of_highest_freq]
+
+    # Find which signals have the most power in that specific frequency bin
+    power_at_highest_freq = power_spectra_all_signals[:, highest_freq_bin_index]
+    top_contributor_indices = np.argsort(power_at_highest_freq)[-3:][::-1]
+
+    for i, signal_idx in enumerate(top_contributor_indices):
+        plt.figure(figsize=(10, 6))
+        plt.plot(y_data, y_train[signal_idx, :], '.-')
+        plt.title(f"Signal #{signal_idx}, a Top Contributor to {highest_freq:.2f} Hz Component")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Value")
+        plt.grid(True)
+        plt.show()
+        plt.close()
     """
 
-    return U_data, Y_data, G_data, sensors_locs
 
+# --- Main Workflow ---
 
-# --- Main Orchestration ---
-def run_generation(config: Config):
-    """Executes the full data generation workflow."""
-    logging.info("Starting data generation process...")
+def run_workflow(config: Config):
+    """
+    Executes the full data generation and processing pipeline.
 
-    # --- Step 1: Load Raw Data ---
-    logging.info(f"Loading raw data from {config.input_data_path}")
-    raw_data = np.load(config.input_data_path)
-    voltage_data = raw_data['voltage_data']
-    clear_time = raw_data['clear_time']
+    Args:
+        config (Config): The configuration object.
+    """
+    logging.info("Starting data generation workflow...")
 
-    # Shuffle
-    indices = np.random.permutation(voltage_data.shape[0])
-    voltage_data = voltage_data[indices]
-    clear_time = clear_time[indices]
+    # Load and process raw data
+    voltage_db, clear_time_db = _load_and_process_raw_data(config)
 
-    # --- Step 2: Process and Centralize Data ---
-    clients_data_voltage, clients_data_clear_time = raw_data_processor(voltage_data, clear_time, config)
-    logging.info(f"Sliced data by clients and recentralized. Voltage shape: {clients_data_voltage.shape}")
+    # Prepare data for DeepONet
+    u_data, y_data, g_data, sensor_locs = _prepare_deeponet_data(voltage_db, clear_time_db, config)
 
-    # --- Step 3: Create DeepONet Cartesian Dataset ---
-    u_data, y_data, g_data, u_time = creating_DeepONet_dataset_cartesian(
-        signals_database=clients_data_voltage,
-        clearing_time=clients_data_clear_time,
-        config=config
-    )
+    # Filter dataset by variance
+    u_data, g_data = _filter_by_frequency(u_data, g_data, config, y_data)
 
+    if config.verbose:
+        # Perform Fourier analysis on the training portion of the data
+        num_train_samples = int(g_data.shape[0] * config.train)
 
-    # Filter by variance
-    if 0.0 < config.variance_filter_percentile < 1.0:
+        # This is performed only on the training set
+        # Frequency filtering is performed on the entire dataset
+        _perform_fourier_analysis(g_data[:num_train_samples], y_data)
 
-        # Calculate variance once for all samples
-        output_variances = np.var(g_data, axis=1)
-
-        if config.variance_filter_mode == 'remove_highest':
-            # Keep samples with the LOWEST variance.
-            variance_threshold = np.quantile(output_variances, config.variance_filter_percentile)
-            keep_mask = output_variances <= variance_threshold
-
-            percentage = config.variance_filter_percentile * 100
-            filter_description = f"Filtering dataset to KEEP samples with the LOWEST {percentage:.0f}% variance."
-            kept_label, discarded_label = "LOW", "HIGH"
-
-        elif config.variance_filter_mode == 'remove_lowest':
-            # Keep samples with the HIGHEST variance.
-            variance_threshold = np.quantile(output_variances, config.variance_filter_percentile)
-            keep_mask = output_variances >= variance_threshold
-
-            # Descriptive labels for logging and plotting
-            percentage = (1 - config.variance_filter_percentile) * 100
-            filter_description = f"Filtering dataset to KEEP samples with the HIGHEST {percentage:.0f}% variance."
-            kept_label, discarded_label = "HIGH", "LOW"
-
-        else:
-            # Added for robustness
-            raise ValueError(
-                f"Invalid config.variance_filter_mode: '{config.variance_filter_mode}'. Choose 'remove_highest' or 'remove_lowest'.")
-
-        logging.info(filter_description)
-
-        # Filter logic
-
-        # Store original data and indices for plotting before filtering
-        if config.verbose:
-            g_data_unfiltered = g_data.copy()
-            kept_indices = np.where(keep_mask)[0]
-            discarded_indices = np.where(~keep_mask)[0]
-
-        # Apply the filter mask
-        original_count = u_data.shape[0]
-        u_data = u_data[keep_mask]
-        g_data = g_data[keep_mask]
-        logging.info(f"Filtering complete. Kept {u_data.shape[0]} out of {original_count} samples.")
-
-        # Visualize
-
-        if config.verbose:
-            logging.info("Displaying diagnostic plots for variance filtering...")
-
-            # Plot the histogram of all variances and the threshold
-            plt.figure(figsize=(10, 6))
-            plt.hist(output_variances, bins=50, alpha=0.75, label="Variance Distribution")
-            plt.axvline(x=variance_threshold, color='r', linestyle='--', linewidth=2,
-                        label=f"Threshold at {variance_threshold:.2e}")
-            plt.title(f"Distribution of Output Variances ({filter_description})")
-            plt.xlabel("Variance of g_data")
-            plt.ylabel("Number of Samples")
-            plt.legend()
-            plt.grid(True)
-            plt.show()
-
-            # Plot a few examples of signals that were KEPT
-            logging.info(f"Plotting up to 3 examples of KEPT ({kept_label} variance) samples...")
-            for i in range(min(3, len(kept_indices))):
-                idx = kept_indices[i]
-                plt.figure(figsize=(10, 6))
-                plt.plot(y_data, g_data_unfiltered[idx, :], '.-g')
-                plt.title(f"KEPT Sample (Index: {idx}) | Variance: {output_variances[idx]:.2e} ({kept_label})")
-                plt.xlabel("Time")
-                plt.ylabel("Voltage")
-                plt.grid(True)
-                plt.ylim(0, 1.2)
-                plt.show()
-
-            # Plot a few examples of signals that were DISCARDED
-            logging.info(f"Plotting up to 3 examples of DISCARDED ({discarded_label} variance) samples...")
-            for i in range(min(3, len(discarded_indices))):
-                idx = discarded_indices[i]
-                plt.figure(figsize=(10, 6))
-                plt.plot(y_data, g_data_unfiltered[idx, :], '.-r')
-                plt.title(
-                    f"DISCARDED Sample (Index: {idx}) | Variance: {output_variances[idx]:.2e} ({discarded_label})")
-                plt.xlabel("Time")
-                plt.ylabel("Voltage")
-                plt.grid(True)
-                plt.ylim(0, 1.2)
-                plt.show()
-
-    else:
-        logging.info("No variance filtering applied (percentile is not between 0.0 and 1.0).")
-
-    # --- Step 4: Split and Save Data ---
-    logging.info(f"Splitting and saving the data to {config.output_data_dir}")
-    os.makedirs(config.output_data_dir, exist_ok=True)
-
-    num_signals = u_data.shape[0]
-    shuffled_indices = np.random.permutation(num_signals)
-
-    train_end = int(num_signals * config.train_split)
-    cal_end = train_end + int(num_signals * config.cal_split)
-
-    splits = {
-        "train": shuffled_indices[:train_end],
-        "calibration": shuffled_indices[train_end:cal_end],
-        "test": shuffled_indices[cal_end:],
-    }
-
-    X1_shared_trunk = y_data.astype(np.float32)
-
-    for split_name, indices in splits.items():
-        logging.info(f"Processing {split_name} split with {len(indices)} signals.")
-        filename = os.path.join(config.output_data_dir, f'{split_name}.npz')
-
-        save_dict = {
-            'X0': u_data[indices].astype(np.float32),
-            'X1': X1_shared_trunk,
-            'y': g_data[indices].astype(np.float32),
-            'X0_plot': u_time.astype(np.float32)
-        }
-
-        np.savez(filename, **save_dict)
-
-    logging.info("All files have been saved successfully!")
+    # Split and save the final datasets
+    _split_and_save_data(u_data, y_data, g_data, sensor_locs, config)
 
 
 # --- Entry Point ---
 
 def main():
-    """Parses arguments and starts the data generation."""
-    parser = argparse.ArgumentParser(description="Generate voltage prediction data for DeepONet.")
-    parser.add_argument("--config", type=str, default="default_offline_voltage",
-                        help="Config file name in configs/data_generation")
-    parser.add_argument("--override", nargs='*', help="Optional overrides in key=value format")
 
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    parser = argparse.ArgumentParser(
+        description="Generate voltage prediction data for DeepONet.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument("--config", type=str, default="default_offline_voltage",
+                        help="Name of the config file in 'configs/data_generation'")
+    parser.add_argument("--override", nargs='*', help="Optional overrides in key=value format")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s",
-                        datefmt='%Y-%m-%d %H:%M:%S')
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    config_path = os.path.join("configs/data_generation", args.config + ".yaml")
-    if not os.path.exists(config_path):
-        logging.error(f"Configuration file not found at {config_path}")
-        return
+    config_path = Path("configs/data_generation") / f"{args.config}.yaml"
+    config = load_config(str(config_path)) if args.config else Config()
 
-    config = load_config(config_path)
     if args.override:
         apply_overrides(config, args.override)
 
-    # Set seeds for reproducibility
-    np.random.seed(config.rng2)
-
-    run_generation(config)
+    np.random.seed(config.seed)
+    run_workflow(config)
 
 
 if __name__ == "__main__":

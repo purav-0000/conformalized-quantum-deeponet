@@ -1,23 +1,18 @@
-# Paths
-source_data_dir: "data/raw_data/load"
-output_data_dir: "data/processed_data/offline_load"
-
-# Data Source
+# Data Source Keys
 input_variable_key: 'V'
 output_variable_key: 'P'
 
 # Preprocessing Hyperparameters
-# None sets to full domain
 time_domain_limits: [0.0, 10.0]
-filter_strength_divisor: 100.0
-input_resolution: 25
+filter_strength_divisor: 80.0
+filter_input_signal: false  # Allows enabling/disabling filtering on the input
+input_resolution: 50
 output_resolution: 100
 
 # Splitting Ratios
 train_split: 0.8
 cal_split: 0.1
-test_split: 0.1
+# Test split is implicitly calculated as 1.0 - train_split - cal_split
 
 # Reproducibility & Debugging
-random_seed: null
-verbose: True
+verbose: false

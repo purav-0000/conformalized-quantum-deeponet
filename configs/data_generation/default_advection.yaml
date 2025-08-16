@@ -1,24 +1,22 @@
-# Data Generation Parameters for Advection Equation
+# DeepONet sensor parameters
+n_sensors_branch: 20
+n_sensors_trunk: 50
+
+# Data split sizes
 train: 1000
 test: 200
 calibration: 200
 
-# DeepONet Sensor Configuration
-n_sensors_branch: 20   # Number of sensors for the initial condition (u0)
-n_sensors_trunk: 50    # Number of sensors for space (x) and time (t) locations
+# Numerical solver parameters
+nx: 101
+nt: 10001
+xmax: 1.0
+tmax: 1.0
 
-# Numerical Solver Parameters
-nx: 101                # Number of spatial grid points for the solver
-nt: 10001              # Number of time steps for the solver
-xmax: 1.0              # Maximum spatial domain value
-tmax: 1.0              # Maximum time domain value
-
-# Initial Condition (GRF) Parameters
+# GRF parameters
 grf_periodicity: 1.0
-length_scale: 1.5      # Length scale for the GRF kernel
-interp: "cubic"
+length_scale: 1.5
+interp: cubic
 
-# General Settings
-seed: 42
-n_jobs: 8              # Number of parallel jobs for data generation (-1 to use all cores)
-output_dir: "data/processed_data/advection"
+# Miscellaneous
+n_jobs: 4

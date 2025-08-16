@@ -1,26 +1,42 @@
-# utils/data_handling.py
 import logging
 import numpy as np
-import os
 from pathlib import Path
-from typing import Dict, Tuple
-
-from matplotlib import pyplot as plt
+from typing import Tuple, Optional, Dict
 
 
-def transform_input(x, min_val, max_val):
+def transform_input(x: np.ndarray, min_val: float, max_val: float) -> np.ndarray:
+    """
+    Normalizes input data to [-1, 1] and projects it onto a hypersphere.
+
+    This transformation is often used to prepare classical data for encoding
+    into quantum states.
+
+    Args:
+        x (np.ndarray): The input data array.
+        min_val (float): The minimum value for normalization.
+        max_val (float): The maximum value for normalization.
+
+    Returns:
+        np.ndarray: The transformed data, with an added dimension.
+    """
+    # Adding a small epsilon for numerical stability if max_val equals min_val
+    epsilon = 1e-8
     d = x.shape[-1]
 
-    # Adding 1e-8 for stability
-    x = 2 * (x - min_val) / ((max_val - min_val) + 1e-8) - 1
-    x = x / np.sqrt(d)
-    x_d1 = np.sqrt(1 - np.sum(x**2, axis=-1, keepdims=True))
+    # Normalize to [-1, 1]
+    x_normalized = 2 * (x - min_val) / ((max_val - min_val) + epsilon) - 1
 
-    # Ensure float32, perhaps np.sqrt(d) is float64
-    return np.concatenate((x, x_d1), axis=-1, dtype=np.float32)
+    # Scale by sqrt(d)
+    x_scaled = x_normalized / np.sqrt(d)
+
+    # Calculate the new dimension to project onto the hypersphere
+    sum_sq = np.sum(x_scaled ** 2, axis=-1, keepdims=True)
+    x_d1 = np.sqrt(1 - sum_sq)
+
+    return np.concatenate((x_scaled, x_d1), axis=-1).astype(np.float32)
 
 
-def normalize_bounds(x_train, x_test, x_cal):
+def _calculate_bounds(x_train, x_test, x_cal):
     def get_min_max(idx):
         arrays = [x_train[idx], x_test[idx], x_cal[idx]]
         concatenated = np.concatenate(arrays, axis=0)
@@ -38,9 +54,22 @@ def normalize_bounds(x_train, x_test, x_cal):
 
 
 class DataHandler:
-    """A class to handle loading and preprocessing of simulation datasets."""
+    """
+    A class to handle loading, preprocessing, and transforming datasets.
+
+    This class follows a two-step initialization:
+    1. `__init__`: Sets up configuration.
+    2. `load_and_process_data()`: Loads and processes all data, preparing it for use.
+    """
 
     def __init__(self, data_dir: str, fourier_features: bool, online: bool):
+        """
+        Initializes the DataHandler with a configuration.
+
+        Args:
+            fourier_features (bool): If True, trunk input is augmented with Fourier features
+            online (bool): If True, data processing is adapted for online 3D datasets
+        """
         self.data_path = Path("data/processed_data") / data_dir
         self.fourier_features = fourier_features
         self.online = online
@@ -48,102 +77,142 @@ class DataHandler:
         if not self.data_path.exists():
             raise FileNotFoundError(f"Data directory not found: {self.data_path}")
 
-        # Load all datasets at initialization
-        (self.x_train, self.y_train, self.x_cal, self.y_cal, self.x_test, self.y_test,
-         self.x_train_plot, _, self.x_test_plot) = self._load_dataset()
+        self.datasets: Dict[str, Dict] = {}
+        self.bounds: Dict[str, float] = {}
+        self.dominant_freqs: Optional[np.ndarray] = None
 
-        # Add Fourier features to the trunk inputs
+    def load_and_process_data(self):
+        """Loads all data splits and applies all preprocessing steps."""
+        self._load_datasets()
         if self.fourier_features:
-            self.dominant_freqs = self.fourier_decomposition()
-            self.x_train = (self.x_train[0], self._add_fourier_features(self.x_train[1]))
-            self.x_test = (self.x_test[0], self._add_fourier_features(self.x_test[1]))
-            self.x_cal = (self.x_cal[0], self._add_fourier_features(self.x_cal[1]))
-
-        # Normalize and transform the datasets
+            self._apply_fourier_features()
         self._normalize_and_transform()
+        logging.info("Data loading and processing complete.")
 
-    def _load_dataset(self):
-        train = np.load((self.data_path / 'train.npz'), allow_pickle=True)
-        cal = np.load((self.data_path / 'calibration.npz'), allow_pickle=True)
-        test = np.load((self.data_path / 'test.npz'), allow_pickle=True)
+    def _load_datasets(self):
+        """
+        Loads the train, calibration, and test datasets from .npz files.
+        """
+        logging.info(f"Loading datasets from {self.data_path}...")
+        for split in ["train", "calibration", "test"]:
+            data = np.load(self.data_path / f'{split}.npz')
+            self.datasets[split] = {
+                'X': (data['X0'].astype(np.float32), data['X1'].astype(np.float32)),
+                'y': data['y'].astype(np.float32),
+                'X0_plot': data.get('X0_plot', None),  # Use .get for optional keys
+            }
 
-        return (train['X0'].astype(np.float32), train['X1'].astype(np.float32)), train['y'].astype(np.float32), \
-            (cal['X0'].astype(np.float32), cal['X1'].astype(np.float32)), cal['y'].astype(np.float32), \
-            (test['X0'].astype(np.float32), test['X1'].astype(np.float32)), test['y'].astype(np.float32), \
-            train['X0_plot'].astype(np.float32), cal['X0_plot'].astype(np.float32), test['X0_plot'].astype(np.float32)
+    def _apply_fourier_features(self):
+        """Calculates and adds Fourier features to the trunk inputs."""
+        logging.info("Applying Fourier features...")
+        sampling_interval = self._calculate_sampling_interval()
+        self.dominant_freqs = self._compute_dominant_frequencies(sampling_interval)
 
-    def _normalize_and_transform(self):
-        """Calculates bounds and applies transformations."""
-        self.bounds = normalize_bounds(self.x_train, self.x_test, self.x_cal)
+        for split in self.datasets:
+            branch, trunk = self.datasets[split]['X']
+            augmented_trunk = self._add_fourier_features(trunk)
+            self.datasets[split]['X'] = (branch, augmented_trunk)
 
-        self.x_train = self._transform_split_input(self.x_train)
-        self.x_test = self._transform_split_input(self.x_test)
-        self.x_cal = self._transform_split_input(self.x_cal)
+    def _calculate_sampling_interval(self) -> float:
+        """
+        Calculates the sampling interval from the training set's trunk coordinates.
 
-    def _transform_split_input(self, x_split: Tuple[np.ndarray, np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
-        """Applies transformation to a split (branch, trunk) input."""
-        branch_transformed = transform_input(x_split[0], self.bounds["branch_min"], self.bounds["branch_max"])
-        trunk_transformed = transform_input(x_split[1], self.bounds["trunk_min"], self.bounds["trunk_max"])
-        return branch_transformed, trunk_transformed
+        Returns:
+            float: The calculated sampling interval.
+        """
+        trunk_coords = self.datasets['train']['X'][1]
 
-    def fourier_decomposition(self):
+        # `np.unique` is efficient and returns a sorted array.
+        unique_coords = np.unique(trunk_coords, axis=0)
 
-        # Online dataset is 3D
-        if not self.online:
-            num_signals, n_locs = self.y_train.shape
-        else:
-            num_signals, n_locs, _ = self.y_train.shape
-
-        # Determine frequencies from training set
-        # Ensure shuffling does not mess with calculating sampling interval
-        sorted_trunk = sorted(self.x_train[1], key=lambda row: row[-1])
-        # Duplicates exist in online problems
-        unique_coords = np.unique(sorted_trunk, axis=0)
-
-        # Online dataset has 3D shape
-        if not self.online:
-            sampling_interval = unique_coords[1, 0] - unique_coords[0, 0]
-        else:
+        if self.online:
+            # For 3D online data (num_signals. n_locs, 1)
             sampling_interval = unique_coords[0, 1, 0] - unique_coords[0, 0, 0]
+        else:
+            # For 2D offline data (n_locs, 1)
+            sampling_interval = unique_coords[1, 0] - unique_coords[0, 0]
 
-        # Calculate the frequencies corresponding to the FFT output
-        # We only need the positive frequencies for the one-sided power spectrum
+        return sampling_interval
+
+    def _compute_dominant_frequencies(self, sampling_interval: float) -> np.ndarray:
+        """
+        Performs FFT on the training output signals to find dominant frequencies.
+
+        Args:
+            sampling_interval (float): The time step between trunk data points.
+
+        Returns:
+            np.ndarray: An array of the most dominant frequencies.
+        """
+        y_train = self.datasets['train']['y']
+        n_locs = y_train.shape[1]
         frequencies = np.fft.fftfreq(n_locs, d=sampling_interval)[:n_locs // 2]
-
-        # Accumulate power spectra from all signals
         total_power_spectrum = np.zeros(n_locs // 2)
-        for i in range(num_signals):
-            signal = self.y_train[i, :] if not self.online else self.y_train[i, :, 0]
-            fft_values = np.fft.fft(signal)
-            # Compute power (squared magnitude) for positive frequencies
-            power = np.abs(fft_values[0:n_locs // 2]) ** 2
+
+        # Hanning window to handle discontinuity at the ends
+        hann_window = np.hanning(n_locs)
+
+        for i in range(y_train.shape[0]):
+            # Online dataset is (num_signals, n_locs, 1), offline dataset is (num_signals, n_locs)
+            signal = y_train[i, :, 0] if self.online else y_train[i, :]
+
+            windowed_signal = signal * hann_window
+            fft_values = np.fft.fft(windowed_signal)
+            power = np.abs(fft_values[:n_locs // 2]) ** 2
             total_power_spectrum += power
 
-        # Average the power spectrum across all signals
-        average_power_spectrum = total_power_spectrum / num_signals
+        avg_power_spectrum = total_power_spectrum / y_train.shape[0]
 
-        # Identify the top 5 dominant frequencies (excluding the DC component)
-        top_indices = np.argsort(average_power_spectrum[1:])[-5:][::-1] + 1
+        # Get top 5 frequencies (excluding DC component at index 0)
+        top_indices = np.argsort(avg_power_spectrum[1:])[-5:][::-1] + 1
         dominant_freqs = frequencies[top_indices]
 
-        logging.info(f"Top identified frequencues: {dominant_freqs}")
-
+        logging.info(f"Top 5 identified frequencies: {np.round(dominant_freqs, 2)}")
         return dominant_freqs
 
     def _add_fourier_features(self, trunk_input: np.ndarray) -> np.ndarray:
-        """Adds Fourier features to the trunk input coordinates."""
+        """
+        Augments trunk coordinates with sine and cosine features for each dominant frequency.
 
-        # Start with the original coordinate as the base feature
+        Args:
+            trunk_input (np.ndarray): The original trunk input data.
+
+        Returns:
+            np.ndarray: The trunk data with added Fourier features.
+        """
         feature_list = [trunk_input]
 
-        # Add sine and cosine pairs for each dominant frequency
         for f in self.dominant_freqs:
             omega_t = 2 * np.pi * f * trunk_input
             feature_list.append(np.cos(omega_t))
             feature_list.append(np.sin(omega_t))
 
-        # Concatenate all features into a single array
-        augmented_trunk_input = np.concatenate(feature_list, axis=1 if not self.online else 2)
+        return np.concatenate(feature_list, axis=-1).astype(np.float32)
 
-        return augmented_trunk_input.astype(np.float32)
+    def _normalize_and_transform(self):
+        """Calculates normalization bounds and applies the hypersphere transformation."""
+        logging.info("Normalizing and transforming datasets...")
+        self.bounds = _calculate_bounds(self.datasets['train']['X'], self.datasets['test']['X'],
+                                        self.datasets['calibration']['X'])
+
+        for split in self.datasets:
+            branch, trunk = self.datasets[split]['X']
+            branch_transformed = transform_input(branch, self.bounds["branch_min"], self.bounds["branch_max"])
+            trunk_transformed = transform_input(trunk, self.bounds["trunk_min"], self.bounds["trunk_max"])
+            self.datasets[split]['X'] = (branch_transformed, trunk_transformed)
+
+    def get_split(self, split_name: str) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:
+        """
+        Returns the processed data for a specific split.
+
+        Args:
+            split_name (str): The name of the split ('train', 'test', 'calibration').
+
+        Returns:
+            A tuple containing the processed (X0, X1) inputs and the y targets.
+        """
+        if not self.datasets:
+            raise RuntimeError("Data not loaded. Call `load_and_process_data()` first.")
+        return self.datasets[split_name]['X'], self.datasets[split_name]['y']
+
 
