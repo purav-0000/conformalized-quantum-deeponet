@@ -187,7 +187,9 @@ class TrainingRunner:
         model = self._create_and_compile_model(dde_data)
 
         callbacks = [LRLogger(display_every=self.config.display_every)] if self.config.decay_gamma else []
+
         losshistory, _ = model.train(
+
             iterations=self.config.iterations,
             display_every=self.config.display_every,
             callbacks=callbacks,
@@ -232,8 +234,6 @@ class TrainingRunner:
 
             x_test = (x_test[0].reshape(-1, x_test[0].shape[-1]), x_test[1].reshape(-1, x_test[1].shape[-1]))
             y_test = y_test.reshape(-1, y_test.shape[-1])
-
-
 
             dde_data = dde.data.Triple(X_train=x_train, y_train=y_train, X_test=x_test, y_test=y_test)
             plot_data = {'x_train': x_train, 'y_train': y_train, 'x_test': x_test, 'y_test': y_test,

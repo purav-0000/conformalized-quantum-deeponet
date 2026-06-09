@@ -4,9 +4,9 @@ output_variable_key: 'P'
 
 # Preprocessing Hyperparameters
 time_domain_limits: [0.0, 10.0]
-filter_strength_divisor: 80.0
+filter_strength_divisor: 100.0
 filter_input_signal: false  # Allows enabling/disabling filtering on the input
-input_resolution: 50
+input_resolution: 20
 output_resolution: 100
 
 # Splitting Ratios

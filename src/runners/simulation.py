@@ -1,3 +1,20 @@
+###############################################################################
+# NOTE: Noise simulation on fake backends is not included in this script.
+# ---------------------------------------------------------------------------
+# If you wish to simulate depolarizing channels, readout errors, and thermal
+# relaxation errors on a fake backend you must modify the code manually:
+#
+# 1) Edit `_setup_simulator()` to construct an Aer simulator with noise
+#    derived from a fake backend.
+# 2) Replace the probability-distribution extraction in
+#    `_process_quantum_output()` with the alternative code provided
+#    at the bottom of this script.
+# 3) Set the number of shots in `_run_quantum_layer()` to
+#    `self.config.shots`.
+# 4) In `src/utils/simulation.py`, uncomment `.measure_all()` and
+#    comment out any saves of density matrices or statevectors.
+###############################################################################
+
 import argparse
 import logging
 import os
@@ -29,13 +46,16 @@ from src.utils.data_handling import DataHandler
 from src.utils.simulation import (build_circuit, evaluate_model, load_weights,
                                   plot_pred, silu)
 
+# No qiskit verbose prints
+logging.getLogger('qiskit').setLevel(logging.WARNING)
+
 # --- Constants ---
 BRANCH_PREFIX = "branch"
 TRUNK_PREFIX = "trunk"
 LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 
 # GPU Temperature Management Configuration (optional)
-MAX_GPU_TEMP = 75  # Celsius
+MAX_GPU_TEMP = 70  # Celsius
 GPU_CHECK_INTERVAL = 5  # Seconds
 
 
@@ -177,6 +197,16 @@ class SimulationRunner:
         if self.config.spqc:
             if not self.config.ensemble:
                 raise ValueError("SPQC mode requires an ensemble configuration.")
+
+            # Implementation checks
+            """
+            if self.config.noise > 0.0:
+                raise ValueError("Noisy simulations for SPQC not implemented yet."
+                                 "Use SPQC for vanilla antiderivative experiments ideally.")
+            """
+            if self.config.residual:
+                raise ValueError("Residual connections for SPQC not implemented yet."
+                                 "Use SPQC for vanilla antiderivative experiments ideally.")
             logging.info("--- Running in SPQC Ensemble Mode ---")
             self._run_ensemble_spqc()
         elif self.config.ensemble:
@@ -208,7 +238,7 @@ class SimulationRunner:
         y_pred = self._run_deeponet_forward_pass(model_path,
                                                  x_test)
 
-        # Evaluate and plot
+        # Evaluate and save results
         evaluate_model(y_pred, y_test, self.output_dir, verbose=False)
 
         # data_handler used directly to avoid reshaping for online datasets in _get_dataset
@@ -242,7 +272,7 @@ class SimulationRunner:
                         tqdm(model_dirs, desc="Running Test Set")]
         test_outputs = np.array(test_outputs)
 
-        # Evaluate and plot with prediction intervals
+        # Evaluate and save results
         evaluate_model(test_outputs, y_test, self.output_dir, verbose=False)
 
         # data_handler used directly to avoid reshaping for online datasets in _get_dataset
@@ -315,7 +345,7 @@ class SimulationRunner:
             )
 
         # Run layer by layer
-        for i in range(num_layers - 1):
+        for i in range(num_layers):
             is_last_layer = (i == num_layers - 1)
             is_residual_layer = (i > 0 and self.config.residual)
             weights = load_weights(model_path, layer=i)
@@ -339,6 +369,11 @@ class SimulationRunner:
                     is_trunk=True,
                     residual=is_residual_layer
                 )
+
+        # Early exit if cost analysis
+        if self.config.analyze_circuit_cost:
+            logging.info("Exiting")
+            exit(0)
 
         # Final dot product and bias
         final_bias = load_weights(model_path, layer=num_layers - 1)["final_bias"]
@@ -413,7 +448,7 @@ class SimulationRunner:
 
         return np.array(all_outputs)
 
-    def _process_quantum_output(self, results, idx: int, n_in: int, n_out: int, hidden_bias: np.ndarray,
+    def _process_quantum_output(self, idx: int, results, n_in: int, n_out: int, hidden_bias: np.ndarray,
                                 output_weight: np.ndarray, output_bias: np.ndarray, last_layer: bool,
                                 is_trunk: bool, residual_term: Optional[np.ndarray]) -> np.ndarray:
         """
@@ -579,15 +614,9 @@ class SimulationRunner:
             #     os.remove(lock_file)
 
     ###############################################################################
-    # WARNING!
-    # -----------------------------------------------------------------------------
-    # The code below executes ensembles as superposed parameterized quantum circuits
-    # as described in Patapovish et al. (2025).
-    #
-    # NOTE: This feature is experimental and unupdated.
+    ### SPQC stuffs below
     ###############################################################################
 
-    # --- SPQC stuffs ---
     def _load_ensemble_parameters(self, model_dirs: List[Path], layer: int) -> Dict[str, Dict]:
         """Loads and aggregates parameters from all models in an ensemble."""
         all_params = [load_weights(m, layer=layer) for m in model_dirs]
@@ -612,53 +641,54 @@ class SimulationRunner:
     def _run_ensemble_spqc(self):
         """Executes the simulation for an entire ensemble using a single SPQC circuit."""
         ensemble_dir = Path("models", "ensembles", self.config.ensemble)
-        model_dirs = [d for d in ensemble_dir.iterdir() if d.is_dir()]
+        model_dirs = [d for d in ensemble_dir.iterdir() if d.is_dir() and d.name != 'simulation_plots']
+        logging.info(f"Found {len(model_dirs)} models in ensemble: {self.config.ensemble}")
 
-        # Regex pattern
+        # Find the number of hidden layers from the saved file weights
         pattern = re.compile(r'\.hidden_layers\.(\d+)\..*\.txt$')
 
-        # Select the first model to figure out number of layers (arbitray)
+        # Select the first model to figure out number of layers (arbitrary, but all models must have same shape)
         model_path = Path(model_dirs[0])
 
         # Collect layer numbers
-        layer_numbers = []
+        layer_nums = [int(pattern.search(f.name).group(1)) for f in model_path.iterdir() if pattern.search(f.name)]
+        if not layer_nums:
+            raise FileNotFoundError(f"No valid layer weight files found in {model_path}")
 
-        # Match pattern
-        for file in model_path.iterdir():
-            if file.is_file():
-                match = pattern.search(file.name)
-                if match:
-                    layer_numbers.append(int(match.group(1)))
+        num_layers = max(layer_nums) + 1
 
-        # Find the last layer
-        last_layer_num = max(layer_numbers)
+        def execute_spqc(inputs: Tuple[np.ndarray, np.ndarray] | Tuple[np.ndarray, None], num_layers: int):
 
-        print(f"Loading parameters for {len(model_dirs)} models from {ensemble_dir}")
+            # Repeat data
+            inputs = (
+                np.tile(inputs[0], (len(model_dirs), 1, 1)),
+                np.tile(inputs[1], (len(model_dirs), 1, 1))
+            )
 
-        def execute_spqc(data: str, last_layer_num: int):
+            branch_outputs_classic, trunk_outputs_classic = [], []
 
-            inputs = self.data_handler.x_test if data == "test" else self.data_handler.x_cal
-
-            branch_outputs_classic = []
             if self.config.classical_branch:
                 for model in model_dirs:
-                    branch_outputs_classic.append(self._run_classical_layer(inputs[0],
-                                                                            [load_weights(model, layer=i) for i in
-                                                                            range(last_layer_num + 1)], is_trunk=False))
-            trunk_outputs_classic = []
+                    branch_outputs_classic.append(
+                        self._run_classical_layer(
+                            inputs[0][0],   # Classical layers require only 1 copy
+                            [load_weights(model, layer=i) for i in range(num_layers)],
+                            is_trunk=False)
+                    )
+
             if self.config.classical_trunk:
                 for model in model_dirs:
-                    trunk_outputs_classic.append(self._run_classical_layer(inputs[1],
-                                                                            [load_weights(model, layer=i) for i in
-                                                                            range(last_layer_num + 1)], is_trunk=True))
+                    trunk_outputs_classic.append(
+                        self._run_classical_layer(
+                            inputs[1][0],   # Classical layers require only 1 copy
+                            [load_weights(model, layer=i) for i in range(num_layers)],
+                            is_trunk=True)
+                    )
 
             # Initialize
             branch_outputs, trunk_outputs, params = None, None, None
-            last_layer = False
-            for i in range(last_layer_num + 1):
-
-                if i == last_layer_num:
-                    last_layer = True
+            for i in range(num_layers):
+                is_last_layer = (i == num_layers - 1)
 
                 params = self._load_ensemble_parameters(model_dirs, layer=i)
 
@@ -666,11 +696,11 @@ class SimulationRunner:
                 if not self.config.classical_branch:
                     branch_outputs = self._run_spqc_quantum_layer(
                         inputs=inputs[0],
-                        n_in=inputs[0].shape[1],
-                        n_out=params["branch"]["hidden_bias"][0].shape[0],
+                        n_in=inputs[0][0].shape[1],
                         # Select an arbitray model's hidden0_bias to calculate size of n_out
+                        n_out=params["branch"]["hidden_bias"][0].shape[0],
                         ensemble_params=params["branch"],
-                        last_layer=last_layer,
+                        last_layer=is_last_layer,
                         is_trunk=False
                     )
 
@@ -678,17 +708,14 @@ class SimulationRunner:
                     # We need to rearrange to (num_models, num_inputs, n_out)
                     branch_outputs = np.transpose(branch_outputs, (1, 0, 2))
 
-                    # Collapse if not last
-                    if i != last_layer_num:
-                        branch_outputs = np.mean(branch_outputs, axis=0)
-
                 if not self.config.classical_trunk:
                     trunk_outputs = self._run_spqc_quantum_layer(
                         inputs=inputs[1],
-                        n_in=inputs[1].shape[1],
+                        n_in=inputs[1][0].shape[1],
+                        # Select an arbitray model's hidden0_bias to calculate size of n_out
                         n_out=params["trunk"]["hidden_bias"][0].shape[0],
                         ensemble_params=params["trunk"],
-                        last_layer=last_layer,
+                        last_layer=is_last_layer,
                         is_trunk=True
                     )
 
@@ -696,12 +723,13 @@ class SimulationRunner:
                     # We need to rearrange to (num_models, num_inputs, n_out)
                     trunk_outputs = np.transpose(trunk_outputs, (1, 0, 2))
 
-                    # Collapse if not last
-                    if i != last_layer_num:
-                        trunk_outputs = np.mean(trunk_outputs, axis=0)
-
                 # Set up for next iteration
                 inputs = (branch_outputs, trunk_outputs)
+
+            # Early exit for circuit cost
+            if self.config.analyze_circuit_cost:
+                logging.info("Exiting")
+                exit(0)
 
             if self.config.classical_branch:
                 branch_outputs = np.array(branch_outputs_classic)
@@ -716,20 +744,26 @@ class SimulationRunner:
 
             return np.array(final_preds)
 
-        cal_outputs = execute_spqc(data="calibration", last_layer_num=last_layer_num)
+        x_cal, y_cal = self._get_dataset('calibration')
+        cal_outputs = execute_spqc(inputs=x_cal, num_layers=num_layers)
 
-        scores = np.abs(self.data_handler.y_cal - cal_outputs.mean(axis=0)) / cal_outputs.std(axis=0)
+        scores = np.abs(y_cal - cal_outputs.mean(axis=0)) / cal_outputs.std(axis=0)
         q_hat = np.quantile(scores, self.config.coverage)
-        print(f"Conformal quantile q_hat at {self.config.coverage * 100}% coverage: {q_hat:.4f}")
+        logging.info(f"Conformal quantile q_hat at {self.config.coverage * 100}% coverage: {q_hat:.4f}")
 
-        # Evaluate on test set
-        test_outputs = execute_spqc(data="test", last_layer_num=last_layer_num)
+        # Run test set
+        x_test, y_test = self._get_dataset('test')
+
+        test_outputs = execute_spqc(x_test, num_layers=num_layers)
         test_outputs = np.array(test_outputs)
 
-        evaluate_model(test_outputs, self.data_handler.y_test, self.output_dir, verbose=True)
+        # Evaluate and save
+        evaluate_model(test_outputs, y_test, self.output_dir, verbose=False)
+
+        # Plot and save
         plot_pred(
-            self.data_handler.x_test, self.data_handler.y_test, test_outputs,
-            self.output_dir, self.data_handler.x_test_plot, q_hat=q_hat
+            self.data_handler.datasets['test']['X'], self.data_handler.datasets['test']['y'], test_outputs,
+            self.output_dir, self.data_handler.datasets['test']['X0_plot'], q_hat=q_hat, online=False   # No online
         )
 
     def _run_spqc_quantum_layer(self, inputs, n_in, n_out, ensemble_params, last_layer, is_trunk):
@@ -740,78 +774,49 @@ class SimulationRunner:
         loader_inv_gate = loader_gate.inverse()
 
         all_outputs = []
-        batch_size = self.config.batch_size or len(inputs)
+        batch_size = self.config.batch_size or len(inputs[0])
 
         if self.config.analyze_circuit_cost:
-            print("Branch, " if not is_trunk else "Trunk, ", end='')
-            print(f"n_in: {n_in}, n_out: {n_out}, thetas_shape: {ensemble_params['hidden_thetas'][0].shape}")
+            logging.info("---Branch--- " if not is_trunk else "---Trunk--- ")
+            logging.info(f"n_in: {n_in}, n_out: {n_out}, thetas_shape: {ensemble_params['hidden_thetas'][0].shape}")
             self._build_spqc_circuit(
-                inputs[0], n_in, n_out, ensemble_params['hidden_thetas'], loader_gate, loader_inv_gate, cost_check=True
+                inputs[:, 0], n_in, n_out, ensemble_params['hidden_thetas'], loader_gate, loader_inv_gate, cost_check=True
             )
             # DUMMY OUTPUT
-            return np.zeros((len(inputs), len(ensemble_params['hidden_thetas']), n_out))
+            return np.zeros((inputs.shape[1], len(ensemble_params['hidden_thetas']), n_out))
 
-        for i in tqdm(range(0, len(inputs), batch_size), desc="Running trunk layer" if is_trunk else "Running branch layer"):
-            batch = inputs[i:i + batch_size]
+        desc = "Running trunk layer" if is_trunk else "Running branch layer"
+
+        for i in tqdm(range(0, len(inputs), batch_size), desc=desc):
+            batch = inputs[:, i:i + batch_size]
+            # Optional: GPU Temperature Management
+            # self._wait_for_gpu_cooldown()
 
             # Circuit construction is now per-input, as it depends on the data_array
             circuits = Parallel(n_jobs=self.config.n_jobs)(
                 delayed(self._build_spqc_circuit)(
-                    x, n_in, n_out, ensemble_params['hidden_thetas'], loader_gate, loader_inv_gate
+                    batch[:, j], n_in, n_out, ensemble_params['hidden_thetas'], loader_gate, loader_inv_gate
                 )
-                for x in batch
+                for j in range(batch.shape[1])
             )
 
             results = self.simulator.run(circuits, shots=1, target_gpus=[self.config.target_gpu]).result()
 
             batch_outputs = [
                 self._process_spqc_output(j, results, n_in, n_out, ensemble_params, last_layer, is_trunk)
-                for j in range(len(batch))
+                for j in range(batch.shape[1])
             ]
 
             all_outputs.extend(batch_outputs)
 
         return np.array(all_outputs)
 
-    def _build_spqc_circuit(self, x_input, n_in, n_out, thetas, loader_gate, loader_inv_gate, cost_check=False):
-        """Builds one SPQC circuit for a single input vector."""
-        x_input_stable = x_input.copy()
-        x_input_stable[np.abs(x_input_stable) < 1e-7] += 1e-7
-
-        circ = create_spqc_circuit(
-            n_in, n_out, thetas, x_input_stable, loader_inv_gate, loader_gate
-        )
-
-        # Optional: Analyze circuit cost against a realistic backend
-        if cost_check:
-
-            t_qc = transpile(circ, optimization_level=2, basis_gates=['ecr', 'rz', 'id', 'sx', 'x'])
-
-            print(f"\n--- Realistic Circuit Cost ---")
-            print(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}")
-
-            # exit(1)
-
-            print()
-
-            return
-
-        if self.config.noise > 0.0:
-            circ.save_density_matrix()
-        else:
-            circ.save_statevector('state')
-        return transpile(circ, self.simulator, optimization_level=1)
-
     def _process_spqc_output(self, idx, results, n_in, n_out, params, last_layer, is_trunk):
         """Processes the combined statevector from an SPQC circuit run."""
-
-        # Get probabilities if noisy simulation
-        if self.config.noise > 0.0:
-            # Diagonal has probabilities for basis states
-            probabilities = results.data(idx)['density_matrix'].data.diagonal().real
-        else:
-            statevector = np.real(results.data(idx)['state'].data)
-            probabilities = statevector ** 2
+        """
+        # For ideal simulations, we square the statevector amplitudes
+        statevector = np.real(results.data(idx)['state'].data)
+        probabilities = statevector ** 2
 
         # Now we have address bits
         num_models = len(params['hidden_bias'])
@@ -819,36 +824,7 @@ class SimulationRunner:
 
         if self.config.mode == 'shots':
             counts = np.random.multinomial(self.config.shots, probabilities)
-
-            # Apply error mitigation if noisy
-            if self.config.noise > 0.0:
-
-                # Indices for all unary vectors
-                valid_indices = []
-                for i in range(n_out):
-                    pos_vec = ['0'] * n_out
-                    pos_vec[i] = '1'
-                    # Qiskit uses a little-endian convention (qubit 0 is the rightmost bit),
-                    # so we build the string and then reverse it to match the statevector index.
-                    pos0_str = (''.join(['0'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
-                    pos1_str = (''.join(['1'] + ['0'] * (n_in - n_out) + pos_vec))[::-1]
-
-                    for j in range(num_models):
-                        addr_str = format(j, f'0{addr_format_bits}b')
-                        # Note: Qiskit's endianness means address qubits might be at the high-order end.
-                        # Assuming statevector format is |tomo⟩|anc⟩|addr⟩
-                        idx0 = int(pos0_str + addr_str, 2)
-                        idx1 = int(pos1_str + addr_str, 2)
-
-                        valid_indices.extend([idx0, idx1])
-
-                invalid_indices = np.setdiff1d(np.arange(len(counts)), valid_indices)
-                counts[invalid_indices] = 0
-
-                state_probs = counts / np.sum(counts)
-            else:
-                state_probs = counts / self.config.shots
-
+            state_probs = counts / self.config.shots
         else:  # ideal mode
             state_probs = probabilities
 
@@ -856,10 +832,13 @@ class SimulationRunner:
 
         # Bit indexing now includes iterating through model addresses
         for i in range(n_out):
-            pos = ['0'] * n_out
-            pos[i] = '1'
-            pos0_str = (''.join(['0'] + ['0'] * (n_in - n_out) + pos))[::-1]
-            pos1_str = (''.join(['1'] + ['0'] * (n_in - n_out) + pos))[::-1]
+            pos_vec = ['0'] * n_out
+            pos_vec[i] = '1'
+            padding = ['0'] * (max(n_in, n_out) - n_out)
+
+            # Bitstring for ancilla=0 and ancilla=1
+            pos0_str = (''.join(['0'] + padding + pos_vec))[::-1]
+            pos1_str = (''.join(['1'] + padding + pos_vec))[::-1]
 
             for j in range(num_models):
                 addr_str = format(j, f'0{addr_format_bits}b')
@@ -868,9 +847,82 @@ class SimulationRunner:
                 idx0 = int(pos0_str + addr_str, 2)
                 idx1 = int(pos1_str + addr_str, 2)
 
-                result0 = state_probs[idx0]
-                result1 = state_probs[idx1]
-                all_outputs[j, i] = np.sqrt(max(n_in, n_out)) * (result0 - result1)
+                # Get probabilities for these two states
+                prob_ancilla0 = state_probs[idx0]
+                prob_ancilla1 = state_probs[idx1]
+                all_outputs[j, i] = np.sqrt(max(n_in, n_out)) * (prob_ancilla0 - prob_ancilla1)
+
+        # Apply classical post-processing layers for each model
+        ret_val = []
+        for i in range(num_models):
+            # The SPQC output is an expectation value; scaling by num_models approximates the sum
+            # that would have occurred from the address qubit superposition.
+            output_i = all_outputs[i] * num_models
+            output_i = silu(output_i + params['hidden_bias'][i])
+
+            # Different variable called ret_val to account for shape mismatches
+            if last_layer:
+                output_i = np.dot(output_i, params['output_weight'][i].T) + params['output_bias'][i]
+                ret_val.append(silu(output_i) if is_trunk else output_i)
+            else:
+                ret_val.append(output_i)
+
+        return np.array(ret_val)
+        """
+        # It is ok to get only real values. RBS gates only operate in the real domain.
+        # Get Probabilities from Simulation Result
+        if self.config.noise > 0.0:
+            # For noisy simulations, we get the diagonal of the density matrix
+            probabilities = results.data(idx)['density_matrix'].data.diagonal().real
+        else:
+            # For ideal simulations, we square the statevector amplitudes
+            statevector = np.real(results.data(idx)['state'].data)
+            probabilities = statevector ** 2
+
+        # Now we have address bits
+        num_models = len(params['hidden_bias'])
+        addr_format_bits = int(np.ceil(np.log2(num_models))) if num_models > 1 else 0
+
+        # Handle Simulation Mode (Shots vs. Ideal)
+        if self.config.mode == 'shots':
+            # Sample from the probability distribution to simulate measurement shots
+            counts = np.random.multinomial(self.config.shots, probabilities)
+
+            if self.config.noise > 0.0:
+                # Mitigate errors by zeroing out probabilities of invalid states
+                valid_indices = self._get_valid_measurement_indices_spqc(n_in, n_out, num_models, addr_format_bits)
+                all_indices = np.arange(len(counts))
+                invalid_indices = np.setdiff1d(all_indices, valid_indices)
+                counts[invalid_indices] = 0
+
+            state_probs = counts / np.sum(counts)
+        else:
+            # In 'ideal' mode, we use the raw probabilities directly
+            state_probs = probabilities
+
+        all_outputs = np.zeros((num_models, n_out))
+
+        # Bit indexing now includes iterating through model addresses
+        for i in range(n_out):
+            pos_vec = ['0'] * n_out
+            pos_vec[i] = '1'
+            padding = ['0'] * (max(n_in, n_out) - n_out)
+
+            # Bitstring for ancilla=0 and ancilla=1
+            pos0_str = (''.join(['0'] + padding + pos_vec))[::-1]
+            pos1_str = (''.join(['1'] + padding + pos_vec))[::-1]
+
+            for j in range(num_models):
+                addr_str = format(j, f'0{addr_format_bits}b')
+                # Note: Qiskit's endianness means address qubits might be at the high-order end.
+                # Assuming statevector format is |tomo⟩|anc⟩|addr⟩
+                idx0 = int(pos0_str + addr_str, 2)
+                idx1 = int(pos1_str + addr_str, 2)
+
+                # Get probabilities for these two states
+                prob_ancilla0 = state_probs[idx0]
+                prob_ancilla1 = state_probs[idx1]
+                all_outputs[j, i] = np.sqrt(max(n_in, n_out)) * (prob_ancilla0 - prob_ancilla1)
 
         # Apply classical post-processing layers for each model
         ret_val = []
@@ -889,6 +941,50 @@ class SimulationRunner:
 
         return np.array(ret_val)
 
+    def _get_valid_measurement_indices_spqc(self, n_in: int, n_out: int, num_models: int, addr_format_bits: int) -> List[int]:
+        """
+        Calculates the integer indices of the valid basis states for error mitigation.
+        A valid state has a unary vector in the output register.
+        """
+        valid_indices = []
+        padding = ['0'] * (max(n_in, n_out) - n_out)
+        for i in range(n_out):
+            pos_vec = ['0'] * n_out
+            pos_vec[i] = '1'
+            # Ancilla=0 and Ancilla=1 cases
+            pos0_str = (''.join(['0'] + padding + pos_vec))[::-1]
+            pos1_str = (''.join(['1'] + padding + pos_vec))[::-1]
+
+            for j in range(num_models):
+                addr_str = format(j, f'0{addr_format_bits}b')
+                valid_indices.extend([int(pos0_str + addr_str, 2), int(pos1_str + addr_str, 2)])
+
+        return valid_indices
+
+    def _build_spqc_circuit(self, x_input, n_in, n_out, thetas, loader_gate, loader_inv_gate, cost_check=False):
+        """Builds one SPQC circuit for a single input vector."""
+        x_input_stable = x_input.copy()
+        x_input_stable[np.abs(x_input_stable) < 1e-8] += 1e-7
+
+        circ = create_spqc_circuit(
+            n_in, n_out, thetas, x_input_stable, loader_inv_gate, loader_gate
+        )
+
+        # Optional: Analyze circuit cost against a realistic backend
+        if cost_check:
+            # Heron: 'cz', 'id', 'rx', 'rz', 'rzz', 'sx', 'x'
+            # Eagle: 'ecr', 'r_z', 'sx', 'x', 'i'
+            t_qc = transpile(circ, optimization_level=2, basis_gates=['ecr', 'r_z', 'sx', 'x', 'i'])
+            logging.info(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}\n")
+            # logging.info("Exiting.")
+            # exit(1)
+
+        if self.config.noise > 0.0:
+            circ.save_density_matrix()
+        else:
+            circ.save_statevector('state')
+
+        return transpile(circ, self.simulator, optimization_level=1)
 
 # --- Main Entry Point ---
 

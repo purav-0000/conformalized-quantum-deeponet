@@ -59,4 +59,4 @@ class OrthoONetCartesianProd(dde.nn.pytorch.NN):
             x = torch.einsum("bi,ni->bn", x_func, x_loc)
         # Add bias
         x += self.b
-        return x
+        return x if not self.online else x.reshape(-1, 1)

@@ -11,17 +11,17 @@ ensemble_name: null
 model_type: ResOrthoONet
 
 # Training hyperparameters
-iterations: 30000
+iterations: 40000
 lr: 0.001
 batch_size: null
 loss: MSE
 
 # Layer sizes
-layers: [20, 20, 20, 20, 20]
+layers: [20, 20, 20, 20, 20, 20, 20]
 
 # Scheduler options
-decay_gamma: null
-minimum_lr: null
+decay_gamma: 0.9999653432 # Approximately 20,000 steps
+minimum_lr: 0.0005
 
 # Reproducibility and Debugging
 verbose: false

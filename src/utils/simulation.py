@@ -87,6 +87,12 @@ def evaluate_model(y_pred: np.ndarray, y_true: np.ndarray, save_dir: Optional[Pa
         np.savetxt(output_path, prediction)
         logging.info(f"Saved evaluation results to {output_dir}")
 
+        with open(output_dir / f"ensemble_output_{timestamp}.txt", "w") as f:
+            for i, slice_2d in enumerate(y_pred):
+                f.write(f"Slice {i}:\n")
+                np.savetxt(f, slice_2d, fmt="%.4f")
+                f.write("\n")
+
     # If predictions are from an ensemble, average across the models first.
     y_pred_mean = y_pred.mean(axis=0) if y_pred.ndim == 3 else y_pred
 
@@ -137,8 +143,10 @@ def build_circuit(
     circuit = custom_tomo_fast(n_in, n_out, x_input_stable, W_gate, loader_gate, loader_inv_gate)
 
     if cost_check:
+        # Heron: 'cz', 'id', 'rx', 'rz', 'rzz', 'sx', 'x'
+        # Eagle: 'ecr', 'rz', 'sx', 'x', 'i'
         # Transpile for a realistic backend to estimate cost.
-        t_qc = transpile(circuit, optimization_level=2, basis_gates=['ecr', 'rz', 'id', 'sx', 'x'])
+        t_qc = transpile(circuit, optimization_level=2, basis_gates=['ecr', 'rz', 'sx', 'x', 'i'])
         logging.info("\n--- Realistic Circuit Cost ---")
         logging.info(f"Depth: {t_qc.depth()}, Gates: {t_qc.count_ops()}")
         return None
@@ -161,7 +169,7 @@ def plot_pred(
         output_dir: Path,
         x_test_plot: np.ndarray,
         q_hat: Optional[float] = None,
-        num_samples: int = 10,
+        num_samples: int = 1,
         online: bool = False
 ) -> None:
     """

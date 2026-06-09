@@ -2,18 +2,19 @@
 M: 1000
 Nu: 30
 Nv: 10
+
 # Note: When trying to provide a list with --override, pass comma separated values (e.g., 0.5,1,0).
-amplitude: [0.95, 1.05]     # Can provide a scalar
-length_scale: [0.25, 0.75]  # Can provide a scalar
+amplitude: 1.00    # Can provide a scalar
+length_scale: 0.5           # Can provide a scalar
 interp: "cubic"
 noise: 0.0
 downsample: uniform
 integrator: custom
 
 # Splits
-train: 1500
-test: 500
-calibration: 500
+train: 750
+test: 200
+calibration: 200
 
 # Miscellaneous
 n_jobs: 8

@@ -4,7 +4,7 @@ num_nodes: 7
 num_data_per_client: 407
 
 # Sliding Window Parameters
-memory_window_size: 10
+memory_window_size: 5
 prediction_horizon: 1   # Fixed at 1 for predicting the next time step (t+1)
 time_domain_limits: [1.0, 3.0]
 

@@ -1,0 +1,27 @@
+# Data options
+data_dir: offline_load_P
+fourier_features: true
+
+# Pick model/ensemble
+model: null
+ensemble: null
+
+# Simulation parameters
+batch_size: null
+coverage: 0.9
+spqc: false
+target_gpu: 0
+residual: true
+online: false
+n_jobs: 4
+simulator: "CPU"  # or "GPU"
+
+# Quantum circuit parameters
+mode: "ideal"     # or "shots"
+shots: 0
+classical_branch: false
+classical_trunk: false
+noise: 0.0
+
+# Seed and debugging
+analyze_circuit_cost: false

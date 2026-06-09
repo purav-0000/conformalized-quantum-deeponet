@@ -8,8 +8,8 @@ test: 200
 calibration: 200
 
 # Numerical solver parameters
-nx: 101
-nt: 10001
+nx: 200
+nt: 20000
 xmax: 1.0
 tmax: 1.0
 

@@ -406,8 +406,205 @@ def _perform_fourier_analysis(
     """
 
 
-# --- Main workflow ---
+def save_quantum_sim_dataset(config: Config, centralized_voltage: np.ndarray):
+    """
+    For saving a sampled, small dataset for quantum simulation.
+    Uses random sampling for calibration windows to maximize speed.
+    Constructs 'pseudo-signals' for calibration to maintain (Signal, Window, Feature) shape.
+    """
+    logging.info("Starting targeted quantum simulation dataset generation...")
 
+    # Shuffle signals to ensure random selection of source signals
+    np.random.shuffle(centralized_voltage)
+
+    # Slice signals to the specified time domain
+    original_time_len = centralized_voltage.shape[1]
+    full_time_grid = np.linspace(-0.1, 12.0, num=original_time_len)
+
+    limits = config.time_domain_limits
+    time_mask = (full_time_grid >= limits[0]) & (full_time_grid <= limits[1])
+    centralized_voltage = centralized_voltage[:, time_mask]
+    original_signal_time = full_time_grid[time_mask]
+
+    """
+    # --- CHANGE START: Global High-Variance Filter ---
+    # 1. Calculate variance for ALL signals in the pool
+    signal_variances = np.var(centralized_voltage, axis=1)
+
+    # 2. Keep only the Top 10% (90th percentile)
+    variance_threshold = np.percentile(signal_variances, 90)
+    high_var_indices = np.where(signal_variances >= variance_threshold)[0]
+
+    # 3. Overwrite the main array with ONLY high-variance signals
+    # centralized_voltage = centralized_voltage[high_var_indices]
+
+    logging.info(f"Filtered pool to top 10% variance. New pool size: {len(centralized_voltage)}")
+
+    # 4. Now shuffle this "hard" pool so Train/Cal/Test are random selections from it
+    np.random.shuffle(centralized_voltage)
+    """
+    # --- SIMULATION DATASET PARAMETERS ---
+
+    # Constraint: All splits must have the same number of windows per signal (dim 1)
+    WINDOWS_PER_SIGNAL = 60
+
+    # 1. Training Parameters (Required to maintain dataset structure)
+    NUM_TRAIN_SIGNALS = 10
+
+    # 2. Test Parameters (Real, contiguous signal for plotting)
+    NUM_TEST_SIGNALS = 7
+
+    # 3. Calibration Parameters (Randomly sampled windows)
+    # We target ~700 samples for robust Conformal Prediction
+    CAL_TARGET_TOTAL_SAMPLES = 420
+
+    # Calculate how many "Pseudo-Signals" we need to hold these samples
+    # e.g., if we need 100 samples and windows_per_signal is 20, we need 5 pseudo-signals.
+    NUM_CAL_PSEUDO_SIGNALS = int(np.ceil(CAL_TARGET_TOTAL_SAMPLES / WINDOWS_PER_SIGNAL))
+    CAL_ACTUAL_TOTAL_SAMPLES = NUM_CAL_PSEUDO_SIGNALS * WINDOWS_PER_SIGNAL
+
+    # Reserve pools of raw data
+    # We reserve a large pool for calibration to ensure good random diversity
+    POOL_TRAIN_SIZE = NUM_TRAIN_SIGNALS
+    POOL_CAL_SIZE = 50
+
+    TRAIN_END_IDX = POOL_TRAIN_SIZE
+    CAL_END_IDX = TRAIN_END_IDX + POOL_CAL_SIZE
+
+    # Slice the arrays sequentially.
+    # Because we filtered the whole pool, these are ALL high-variance.
+    train_signals_raw = centralized_voltage[0:TRAIN_END_IDX]
+    cal_signals_pool_raw = centralized_voltage[TRAIN_END_IDX:CAL_END_IDX]
+
+    # Take the test signal immediately following the calibration pool
+    test_signals_raw = centralized_voltage[CAL_END_IDX: CAL_END_IDX + NUM_TEST_SIGNALS]
+
+    # Store the original test signal voltage for plotting
+    original_test_voltage = test_signals_raw[0, :]
+
+    logging.info(f"(QSIM) Configuration:")
+    logging.info(f"  - Windows Per Signal (Fixed): {WINDOWS_PER_SIGNAL}")
+    logging.info(f"  - Training: {NUM_TRAIN_SIGNALS} real signals")
+    logging.info(
+        f"  - Calibration: {CAL_ACTUAL_TOTAL_SAMPLES} random windows (grouped into {NUM_CAL_PSEUDO_SIGNALS} pseudo-signals)")
+    logging.info(f"  - Test: {NUM_TEST_SIGNALS} real signal")
+
+    # --- 1. PROCESSING TRAINING SET (Real Signals) ---
+    logging.info("(QSIM) Processing training signals...")
+    U_train, U_time_train, Y_train, G_train = _create_sliding_window_dataset(
+        train_signals_raw, original_signal_time, config
+    )
+
+    # Slice to fixed window count
+    U_train = U_train[:, :WINDOWS_PER_SIGNAL, :]
+    U_time_train = U_time_train[:, :WINDOWS_PER_SIGNAL, :]
+    Y_train = Y_train[:, :WINDOWS_PER_SIGNAL, :]
+    G_train = G_train[:, :WINDOWS_PER_SIGNAL, :]
+
+    train_save_path = OUTPUT_DIR / 'train.npz'
+    np.savez_compressed(
+        train_save_path,
+        X0=U_train.astype(np.float32),
+        X1=Y_train.astype(np.float32),
+        y=G_train.astype(np.float32),
+        X0_plot=U_time_train.astype(np.float32)
+    )
+    logging.info(f"(QSIM) Training set saved. Shape: {U_train.shape}")
+
+    # --- 2. PROCESSING CALIBRATION SET (Randomly Sampled Pseudo-Signals) ---
+    logging.info(f"(QSIM) Generating calibration pool from {POOL_CAL_SIZE} raw signals...")
+
+    # Generate ALL windows from the pool
+    U_cal_pool, U_time_cal_pool, Y_cal_pool, G_cal_pool = _create_sliding_window_dataset(
+        cal_signals_pool_raw, original_signal_time, config
+    )
+
+    # Flatten the pool: (Signals, Windows, Features) -> (Total_Windows, Features)
+    win_size = U_cal_pool.shape[2]
+    U_cal_flat = U_cal_pool.reshape(-1, win_size)
+    U_time_cal_flat = U_time_cal_pool.reshape(-1, win_size)
+    Y_cal_flat = Y_cal_pool.reshape(-1, 1)
+    G_cal_flat = G_cal_pool.reshape(-1, 1)
+
+    logging.info(f"(QSIM) Sampling {CAL_ACTUAL_TOTAL_SAMPLES} windows from pool of {U_cal_flat.shape[0]} windows...")
+
+    if U_cal_flat.shape[0] < CAL_ACTUAL_TOTAL_SAMPLES:
+        raise ValueError("Not enough windows in calibration pool to satisfy sampling requirement.")
+
+    # Randomly select indices
+    sample_indices = np.random.choice(U_cal_flat.shape[0], size=CAL_ACTUAL_TOTAL_SAMPLES, replace=False)
+
+    # Reshape into Pseudo-Signals to match (Signals, Windows, Features) structure
+    # This creates "signals" that are just collections of random independent windows
+    U_cal_sampled = U_cal_flat[sample_indices].reshape(NUM_CAL_PSEUDO_SIGNALS, WINDOWS_PER_SIGNAL, -1)
+    U_time_cal_sampled = U_time_cal_flat[sample_indices].reshape(NUM_CAL_PSEUDO_SIGNALS, WINDOWS_PER_SIGNAL, -1)
+    Y_cal_sampled = Y_cal_flat[sample_indices].reshape(NUM_CAL_PSEUDO_SIGNALS, WINDOWS_PER_SIGNAL, -1)
+    G_cal_sampled = G_cal_flat[sample_indices].reshape(NUM_CAL_PSEUDO_SIGNALS, WINDOWS_PER_SIGNAL, -1)
+
+    cal_save_path = OUTPUT_DIR / 'calibration.npz'
+    np.savez_compressed(
+        cal_save_path,
+        X0=U_cal_sampled.astype(np.float32),
+        X1=Y_cal_sampled.astype(np.float32),
+        y=G_cal_sampled.astype(np.float32),
+        X0_plot=U_time_cal_sampled.astype(np.float32)
+    )
+    logging.info(f"(QSIM) Calibration set saved. Shape: {U_cal_sampled.shape}")
+
+    # --- 3. PROCESSING TEST SET (Real Signal) ---
+    logging.info("(QSIM) Processing test signal...")
+    U_test, U_time_test, Y_test, G_test = _create_sliding_window_dataset(
+        test_signals_raw, original_signal_time, config
+    )
+
+    # Slice to fixed window count
+    U_test = U_test[:, :WINDOWS_PER_SIGNAL, :]
+    U_time_test = U_time_test[:, :WINDOWS_PER_SIGNAL, :]
+    Y_test = Y_test[:, :WINDOWS_PER_SIGNAL, :]
+    G_test = G_test[:, :WINDOWS_PER_SIGNAL, :]
+
+    test_save_path = OUTPUT_DIR / 'test.npz'
+    np.savez_compressed(
+        test_save_path,
+        X0=U_test.astype(np.float32),
+        X1=Y_test.astype(np.float32),
+        y=G_test.astype(np.float32),
+        X0_plot=U_time_test.astype(np.float32),
+        original_time=original_signal_time.astype(np.float32),
+        original_voltage=original_test_voltage.astype(np.float32)
+    )
+    logging.info(f"(QSIM) Test set saved to {test_save_path}")
+    logging.info(f"(QSIM)  - X0 shape: {U_test.shape}")
+
+    logging.info("--- Data for Single Test Signal Plotting (Terminal Output) ---")
+
+    # Y_test and G_test have shape (1, 10, 1) from the single test signal
+    # We extract the data by indexing [0, :, 0] to get a 1D array
+    trunk_coordinates = Y_test[0, :, 0]
+    ground_truth_targets = G_test[0, :, 0]
+
+    print("\n\n================== SINGLE TEST SIGNAL DATA (COPY BELOW) ==================")
+
+    print("\n--- Plotting Data (Window Targets) ---")
+    print("\n# Trunk Coordinates (Y_test - time points for each target)")
+    # Use repr() for a clean, copy-pasteable array format
+    print(f"plot_time = {repr(trunk_coordinates)}")
+
+    print("\n# Ground Truth Targets (G_test - voltage value at each time point)")
+    print(f"plot_voltage_truth = {repr(ground_truth_targets)}")
+
+    print("\n\n--- Original Full Signal (for context) ---")
+    print("\n# Original Time Coords (Full)")
+    print(f"original_time = {repr(original_signal_time)}")
+
+    print("\n# Original Voltage Values (Full)")
+    print(f"original_voltage = {repr(original_test_voltage)}")
+
+    print("\n======================= END OF SINGLE TEST SIGNAL DATA =====================\n")
+    logging.info("Data for single test signal printed to console.")
+
+
+# --- Main workflow ---
 def run_workflow(config: Config):
     """
     Executes the full data generation and processing pipeline.
@@ -415,11 +612,15 @@ def run_workflow(config: Config):
     Args:
         config (Config): The configuration object.
     """
+
     logging.info("Starting sliding window data generation workflow...")
     np.random.seed(config.seed)
 
     # Load and centralize raw data
     centralized_voltage = _load_and_centralize_raw_data(config)
+    # Save a small part of the dataset
+    save_quantum_sim_dataset(config, centralized_voltage)
+
     np.random.shuffle(centralized_voltage)  # Shuffle signals before processing
 
     # Slice signals to the specified time domain
@@ -481,8 +682,8 @@ def run_workflow(config: Config):
             plt.close()
 
     for name, idx in splits.items():
-        logging.info(f"Processing '{name}' split with {len(idx)} signals.")
-        save_path = OUTPUT_DIR / f'{name}.npz'
+        logging.info(f"Processing '{name}' split with {U_data[idx].shape[0] * U_data[idx].shape[1]} windows.")
+        save_path = OUTPUT_DIR / f'{name}_classical.npz'
         np.savez_compressed(
             save_path,
             X0=U_data[idx].astype(np.float32),

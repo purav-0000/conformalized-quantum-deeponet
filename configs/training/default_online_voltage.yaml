@@ -1,6 +1,6 @@
 # Data options
 data_dir: online_voltage
-fourier_features: true
+fourier_features: false
 online: true
 bootstrap: false
 
@@ -8,21 +8,21 @@ bootstrap: false
 model_name: null
 ensemble_size: 0
 ensemble_name: null
-model_type: ResOrthoONet
+model_type: OrthoONet
 
 # Training hyperparameters
-iterations: 2500
+iterations: 15000
 lr: 0.01
-batch_size: 512
+batch_size: 256
 loss: MSE
 
 # Layer sizes
-layers: [10, 10, 10, 10]
+layers: [5, 5]
 
 # Scheduler options
-decay_gamma: 0.998
-minimum_lr: 0.003
+decay_gamma: null # Prev 0.998
+minimum_lr: null  # Prev 0.003
 
 # Reproducibility and Debugging
 verbose: true
-display_every: 250
+display_every: 1000

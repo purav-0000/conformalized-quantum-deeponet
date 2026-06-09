@@ -4,10 +4,10 @@ num_nodes: 7
 num_data_per_client: 407
 
 # DeepONet Data Generation Parameters
-n_sensors: 30        # Number of sensors for the branch network
+n_sensors: 20          # Number of sensors for the branch network
 n_locs: 100            # Number of locations for the trunk network
-memory_ranging: 1.1
-max_time: 8.0
+memory_ranging: 1.0
+max_time: 4.0
 max_clear: 0.9
 
 # Splitting Ratios
@@ -16,7 +16,7 @@ calibration: 0.1
 # Test split is implicitly (1 - train_split - cal_split)
 
 # Frequency Filtering
-frequency_filter_percentile: 0.6  # 1.0 means no filtering
+frequency_filter_percentile: 1.0  # 1.0 means no filtering
 filter_mode: "keep_lowest"        # Or "keep_highest"; quantile is then calculated as 1 - variance_filter_percentile
 
 # Reproducibility and Debugging

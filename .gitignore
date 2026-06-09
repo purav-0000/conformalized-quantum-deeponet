@@ -4,3 +4,12 @@ __pycache__/
 classical_advection.py 
 classical_burgers.py
 results/
+
+# Ignore
+data/processed_data/.backup
+models/
+scripts/
+.vs/
+.venv/
+src/.ipynb_checkpoints
+src/notebooks

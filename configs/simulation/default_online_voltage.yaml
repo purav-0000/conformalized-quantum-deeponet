@@ -1,6 +1,6 @@
 # Data options
 data_dir: online_voltage
-fourier_features: true
+fourier_features: false
 
 # Pick model/ensemble
 model: null
@@ -11,7 +11,7 @@ batch_size: null
 coverage: 0.9
 spqc: false
 target_gpu: 0
-residual: true
+residual: false
 online: true
 n_jobs: 4
 simulator: "CPU"  # or "GPU"

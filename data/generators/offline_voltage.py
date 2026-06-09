@@ -9,6 +9,7 @@ from typing import Dict, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import interpolate
+from scipy.fft import dct
 import yaml
 
 from tqdm import tqdm
@@ -130,6 +131,7 @@ def _prepare_deeponet_data(
         - G_data: Network outputs.
         - sensor_locs: The locations of the branch sensors.
     """
+
     num_signals = signals_db.shape[0]
     original_time = np.linspace(-0.1, 12.0, num=signals_db.shape[1])
 
@@ -178,6 +180,104 @@ def _prepare_deeponet_data(
     logging.info(
         f"U_data (Branch) shape: {U_data.shape}, Y_data (Trunk) shape: {Y_data.shape}, G_data (Output) shape: {G_data.shape}")
     return U_data, Y_data, G_data, sensor_locs
+"""
+
+def _prepare_deeponet_data(
+        signals_db: np.ndarray, clearing_time: np.ndarray, config: Config
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+
+    Creates a dataset for DeepONet to predict post-fault dynamics
+    from pre-fault dynamics.
+
+    num_signals = signals_db.shape[0]
+    original_time = np.linspace(-0.1, 12.0, num=signals_db.shape[1])
+
+    # --- THIS IS THE KEY CHANGE (Part 1) ---
+    # Define trunk locations (Y_data) as RELATIVE time since fault.
+    # e.g., [0.0, 0.03, 0.06, ..., 3.0]
+    # We'll assume a new config value: config.post_fault_duration
+    # For this example, let's set it to 3.0
+    post_fault_duration = 3.0
+    Y_data = np.linspace(0.0, post_fault_duration, config.n_locs).reshape(-1, 1)
+
+    # We also define the sensor locations for the input window.
+    # Let's assume input window is from t=-0.1 up to the fault.
+    # We'll sample at config.n_sensors points.
+    # Note: sensor_locs_relative is not strictly needed, but good for plotting.
+    sensor_locs_relative = np.linspace(-0.1, 0.0, config.n_sensors)  # Sample from t=-0.1 to t=0 (relative to fault)
+    # Let's adjust this to be more like your code: window from -0.1 to fault
+    pre_fault_start_time = -0.1
+    # We will pass the *relative* sensor locations to the branch net
+    # to be consistent. But wait, no, the branch net takes a *function*.
+    # So we just sample the function. Let's simplify.
+
+    U_data = np.zeros((num_signals, config.n_sensors))
+    G_data = np.zeros((num_signals, config.n_locs))
+    # This will store the *actual* sensor locations for each sample, for plotting
+    sensor_locs_actual = np.zeros((num_signals, config.n_sensors))
+
+    plot_indices_for_verbose = np.random.randint(0, num_signals, size=3)
+
+    for i in tqdm(range(num_signals), desc="Preparing DeepONet data"):
+        # Create an interpolator for the full, original signal
+        interpolated_signal = interpolate.interp1d(original_time, signals_db[i], copy=False, assume_sorted=True,
+                                                   bounds_error=False,
+                                                   fill_value=(signals_db[i][0], signals_db[i][-1])
+                                                   )
+
+        fault_time = clearing_time[i]
+
+        # --- THIS IS THE KEY CHANGE (Part 2) ---
+
+        # 1. Branch Input (U_data) - PRE-FAULT
+        # Sample from pre_fault_start_time (e.g., -0.1) up to the fault_time.
+        input_sensor_locs = np.linspace(pre_fault_start_time, fault_time, config.n_sensors)
+
+        # 1. Get the original data
+        original_signal = interpolated_signal(input_sensor_locs)
+
+        # 2. Apply the Discrete Cosine Transform (Type II is standard)
+        # This transforms 30 signal points into 30 frequency coefficients
+        dct_coeffs = dct(original_signal, type=2, norm='ortho')
+
+        # 3. Use this as your new branch input
+        U_data[i, :] = dct_coeffs.astype(np.float32)
+        sensor_locs_actual[i, :] = input_sensor_locs  # Save for plotting
+
+        # 2. Trunk Output (G_data) - POST-FAULT
+        # Sample from fault_time up to (fault_time + post_fault_duration).
+        # This corresponds to the *relative* Y_data we defined earlier.
+        output_actual_locs = np.linspace(fault_time, fault_time + post_fault_duration, config.n_locs)
+        G_data[i, :] = interpolated_signal(output_actual_locs)
+
+        # Verbose plotting
+        if config.verbose and i in plot_indices_for_verbose:
+            plt.figure(figsize=(10, 6))
+            plt.plot(original_time, signals_db[i], 'm', ls='--', label="Original Voltage Signal")
+
+            # Plot the input data
+            plt.plot(input_sensor_locs, U_data[i, :], 'b.-', label=f"{config.n_sensors} Branch Input Values (U_data)")
+
+            # Plot the output data
+            plt.plot(output_actual_locs, G_data[i, :], 'g.-', ms=10, label=f"{config.n_locs} Output Values (G_data)")
+
+            # Plot the fault line
+            plt.axvline(x=fault_time, color='r', ls='--', label=f"Fault Time (t={fault_time:.2f})")
+
+            plt.title(f"Data Generation (Corrected) - Signal {i}")
+            plt.xlabel("Absolute Time")
+            plt.ylabel("Voltage")
+            plt.legend(loc='lower right')
+            plt.grid(True)
+            plt.show()
+
+    logging.info(
+        f"U_data (Branch) shape: {U_data.shape}, Y_data (Trunk) shape: {Y_data.shape}, G_data (Output) shape: {G_data.shape}")
+
+    # Note: returning sensor_locs_actual (which is different for each sample) is tricky.
+    # For a general plot, maybe just return the locations for the first sample.
+    return U_data, Y_data, G_data, sensor_locs_actual[0, :]
+"""
 
 
 def _split_and_save_data(

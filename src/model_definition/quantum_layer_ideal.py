@@ -48,8 +48,13 @@ def data_loader(data_array):
     sin_product = 1.0
     params = np.empty(num_params, dtype=np.float64)
     for i in range(num_params):
-        params[i] = np.arccos(data_array[i] * sin_product)
-        sin_product /= np.sin(params[i])
+        # Clamp the argument to avoid domain errors from floating point inaccuracies
+        arg = np.clip(data_array[i] * sin_product, -1.0, 1.0)
+        params[i] = np.arccos(arg)
+
+        # Avoid division by zero if sin is ~0
+        sin_val = np.sin(params[i])
+        sin_product /= sin_val if abs(sin_val) > 1e-9 else 1e-9
 
     # Flip the final angle if the last component is negative
     if data_array[-1] < 0:
@@ -66,6 +71,7 @@ def data_loader(data_array):
 
 def find_nparams(n,d): # size_in, size_out
     return int((2*n-1-d)*(d/2))
+
 
 def W(n_in, n_out, thetas): #generate thetas else where
     

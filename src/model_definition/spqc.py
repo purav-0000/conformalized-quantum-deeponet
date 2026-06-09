@@ -21,7 +21,7 @@ def create_spqc_circuit(
         n_in: int,
         n_out: int,
         ensemble_thetas: np.ndarray,
-        data_array: np.ndarray,
+        data_arrays: np.ndarray,
         loader_inv_gate,
         loader_special_gate
 ) -> QuantumCircuit:
@@ -32,7 +32,7 @@ def create_spqc_circuit(
         n_in: Number of input features.
         n_out: Number of output features.
         ensemble_thetas: A 2D array of theta parameters, shape (num_models, num_thetas).
-        data_array: The classical input data vector.
+        data_arrays: The classical input data vector.
         loader_inv_gate: The inverse data loader gate.
         loader_special_gate: The special data loader gate for tomography.
 
@@ -65,9 +65,23 @@ def create_spqc_circuit(
     circuit.h(anc_qr)
     circuit.cx(anc_qr, tomo_qr[num_qubits - n_in])
 
-    # 2. Load classical data
-    loader_data_gate = data_loader(data_array)
-    circuit.append(loader_data_gate, input_qubits)
+    # 2. Load classical data (different data for each model)
+    # loader_data_gate = data_loader(data_arrays[0])
+    # circuit.append(loader_data_gate, input_qubits)
+
+    """
+    for i, data_array in enumerate(data_arrays):
+        loader_gate = data_loader(data_array)
+        control_state = f'{i:0{num_addr_qubits}b}'
+        controlled_loader = loader_gate.control(
+            num_ctrl_qubits=num_addr_qubits,
+            label=f'C-Load_{i}',
+            ctrl_state=control_state
+        )
+        # Append the controlled gate to the circuit
+        circuit.append(controlled_loader, addr_qr[:] + input_qubits)
+    """
+    _apply_parallel_data_loader(circuit, data_arrays, addr_qr, input_qubits)
 
     # 3. Apply the parallelized trainable unitary (W) using UCRY gates
     # Pad to power of 2 first
@@ -109,23 +123,83 @@ def _apply_parallel_w(circuit, n_in, n_out, thetas, addr_qr, tomo_qr):
         for j in range(theta_slice.shape[1]):
             c_qubit, t_qubit = q_start_index, q_start_index + 1
 
+            # Unconditional scaffolding
             circuit.h([tomo_qr[c_qubit], tomo_qr[t_qubit]])
             circuit.cz(tomo_qr[c_qubit], tomo_qr[t_qubit])
 
-            # print(len(list(theta_slice[:, j].flatten())))
+            # Conditional rotations (uniformly controlled)
             ucry_c = UCRYGate(list(theta_slice[:, j].flatten()))
             ucry_t = UCRYGate(list(-theta_slice[:, j].flatten()))
 
             circuit.append(ucry_c, [tomo_qr[c_qubit]] + addr_qr[:])
             circuit.append(ucry_t, [tomo_qr[t_qubit]] + addr_qr[:])
 
-
+            # Unconditional scaffolding
             circuit.cz(tomo_qr[c_qubit], tomo_qr[t_qubit])
             circuit.h([tomo_qr[c_qubit], tomo_qr[t_qubit]])
 
             q_start_index += 2
         theta_start_idx += num_thetas_in_slice
 
+
+def _apply_parallel_data_loader(circuit, data_arrays, addr_qr, input_qubits):
+    """
+    Builds a depth-optimized, parallel data loader circuit.
+
+    This function applies the H and CZ gates of the RBS structure unconditionally,
+    and only controls the RY rotations via UCRYGates, significantly reducing depth.
+    """
+    num_models = data_arrays.shape[0]
+    num_qubits = data_arrays.shape[1]
+    num_params = num_qubits - 1
+
+    # Calculate RBS parameters (mimics quantum_layer_ideal.py's data_loader)
+    all_loader_params = np.empty((num_models, num_params), dtype=np.float64)
+    for i, data_array in enumerate(data_arrays):
+        # Normalize data
+        norm = np.linalg.norm(data_array, ord=2)
+        if abs(norm - 1) > 1e-8:
+            data_array = data_array / norm
+
+        # Compute unary encoding parameters (thetas for the RBS gates)
+        sin_product = 1.0
+        params = np.empty(num_params, dtype=np.float64)
+        for j in range(num_params):
+            # Clamp the argument to avoid domain errors from floating point inaccuracies
+            arg = np.clip(data_array[j] * sin_product, -1.0, 1.0)
+            params[j] = np.arccos(arg)
+
+            # Avoid division by zero if sin is ~0
+            sin_val = np.sin(params[j])
+            sin_product /= sin_val if abs(sin_val) > 1e-9 else 1e-9
+
+        if data_array[-1] < 0:
+            params[-1] *= -1
+
+        all_loader_params[i, :] = params
+
+    # Padding to ensure power of 2
+    all_loader_params_padded = pad_to_power_of_two(all_loader_params)
+
+    # Build circuit layer by layer
+    for i in range(num_params):
+        c_qubit, t_qubit = input_qubits[i], input_qubits[i + 1]
+
+        # Unconditional scaffolding
+        circuit.h([c_qubit, t_qubit])
+        circuit.cz(c_qubit, t_qubit)
+
+        # Conditional rotations (uniformly controlled)
+        thetas_for_this_step = all_loader_params_padded[:, i]
+        ucry_pos = UCRYGate(list(thetas_for_this_step))
+        ucry_neg = UCRYGate(list(-thetas_for_this_step))
+
+        circuit.append(ucry_pos, [c_qubit] + addr_qr[:])
+        circuit.append(ucry_neg, [t_qubit] + addr_qr[:])
+
+        # Unconditional scaffolding
+        circuit.cz(c_qubit, t_qubit)
+        circuit.h([c_qubit, t_qubit])
 
 """
 for j in range(num_models):
