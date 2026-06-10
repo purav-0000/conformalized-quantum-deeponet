@@ -13,3 +13,5 @@ scripts/
 .venv/
 src/.ipynb_checkpoints
 src/notebooks
+.idea/
+.gitignore
