@@ -19,7 +19,6 @@ Experiments on synthetic partial differential equations and real-world power sys
 
 - `configs/`: Configuration files for running experiments.
 - `data/`: Datasets used for training and evaluation.
-- `logs/`: Experiment logs and outputs.
 - `src/`: Source code including network architectures, conformal prediction logic, and quantum circuit generation.
 - `requirements.txt`: Python dependencies required to run the project.
 
