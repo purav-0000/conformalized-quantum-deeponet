@@ -25,18 +25,23 @@ Experiments on synthetic partial differential equations and real-world power sys
 
 ## Requirements
 
-To install the dependencies, use:
+For CPU development, install the tested portable dependencies:
+
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-Key dependencies:
-- `deepxde==1.10.1`
-- `qiskit==0.45.0`
-- `qiskit-aer==0.13.0`
-- `torch`, `numpy`, `scikit-learn`
+Fleet experiments use the reproducible micromamba specification in
+`tools/fleet/environment.yaml`. It creates an environment named `qiskit` with
+Python 3.12, PyTorch 2.11.0 + CUDA 12.8, Qiskit 2.5.0, Qiskit Aer 0.17.2, and
+DeepXDE 1.15.0. See `tools/fleet/README.md` for GPU placement and immutable-run
+instructions.
 
-*Note: The `requirements.txt` might be incomplete. Additional dependencies might be required depending on the hardware (e.g. `qiskit-aer-gpu`).*
+Run the regression suite with:
+
+```bash
+python -m pytest -q
+```
 
 ## Authors
 
