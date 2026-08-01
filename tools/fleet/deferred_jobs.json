@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-01",
+  "reason": "Queued launchers cancelled at user request; retain these jobs for later submission.",
+  "branch": "codex/accelerate-fleet",
+  "environment": {
+    "name": "qiskit",
+    "python": "/home/pmatlia/qiskit-fleet/micromamba/envs/qiskit/bin/python",
+    "env": {
+      "DDE_BACKEND": "pytorch",
+      "PYTHONPATH": ".",
+      "LD_LIBRARY_PATH": "/home/pmatlia/qiskit-fleet/micromamba/envs/qiskit/lib"
+    },
+    "module": "src.runners.training"
+  },
+  "jobs": [
+    {
+      "id": "advection-5-duplicate",
+      "host": "chroma",
+      "gpu": 1,
+      "experiment": "advection",
+      "member": 5,
+      "label": "duplicate",
+      "workdir": "/home/pmatlia/qiskit-fleet/runs/advection-train-bc86248/worktree",
+      "config": "default_advection",
+      "overrides": ["ensemble_size=8", "ensemble_name=advection_trajectory_v2", "ensemble_member=5", "seed=20260801", "iterations=40000", "orthogonal_implementation=optimized", "verbose=false"],
+      "requires": "/home/pmatlia/qiskit-fleet/runs/advection-train-bc86248/worktree/models/ensembles/advection_trajectory_v2/model_2/timing.json",
+      "log": "/home/pmatlia/qiskit-fleet/runs/advection-train-bc86248/member_5_duplicate.log"
+    },
+    {
+      "id": "advection-6-duplicate",
+      "host": "chroma",
+      "gpu": 0,
+      "experiment": "advection",
+      "member": 6,
+      "label": "duplicate",
+      "workdir": "/home/pmatlia/qiskit-fleet/runs/advection-train-bc86248/worktree",
+      "config": "default_advection",
+      "overrides": ["ensemble_size=8", "ensemble_name=advection_trajectory_v2", "ensemble_member=6", "seed=20260801", "iterations=40000", "orthogonal_implementation=optimized", "verbose=false"],
+      "requires": "/home/pmatlia/qiskit-fleet/runs/advection-train-bc86248/worktree/models/ensembles/advection_trajectory_v2/model_1/timing.json",
+      "log": "/home/pmatlia/qiskit-fleet/runs/advection-train-bc86248/member_6_duplicate.log"
+    },
+    {
+      "id": "offline-voltage-3-duplicate",
+      "host": "helix",
+      "gpu": 0,
+      "experiment": "offline_voltage",
+      "member": 3,
+      "label": "duplicate",
+      "workdir": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source",
+      "config": "default_offline_voltage",
+      "overrides": ["ensemble_size=8", "ensemble_name=offline_voltage_trajectory_v2", "ensemble_member=3", "seed=20260801", "iterations=40000", "orthogonal_implementation=optimized", "verbose=false"],
+      "requires": "/home/pmatlia/qiskit-fleet/runs/advection-fef5c1e-bc86248/worktree/models/ensembles/advection_trajectory_v2/model_3/timing.json",
+      "log": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/offline_member_3_duplicate.log"
+    },
+    {
+      "id": "offline-voltage-4-duplicate",
+      "host": "helix",
+      "gpu": 1,
+      "experiment": "offline_voltage",
+      "member": 4,
+      "label": "duplicate",
+      "workdir": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source",
+      "config": "default_offline_voltage",
+      "overrides": ["ensemble_size=8", "ensemble_name=offline_voltage_trajectory_v2", "ensemble_member=4", "seed=20260801", "iterations=40000", "orthogonal_implementation=optimized", "verbose=false"],
+      "requires": "/home/pmatlia/qiskit-fleet/runs/advection-fef5c1e-bc86248/worktree/models/ensembles/advection_trajectory_v2/model_4/timing.json",
+      "log": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/offline_member_4_duplicate.log"
+    },
+    {
+      "id": "offline-voltage-6",
+      "host": "chroma",
+      "gpu": 0,
+      "experiment": "offline_voltage",
+      "member": 6,
+      "label": "primary",
+      "workdir": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source",
+      "config": "default_offline_voltage",
+      "overrides": ["ensemble_size=8", "ensemble_name=offline_voltage_trajectory_v2", "ensemble_member=6", "seed=20260801", "iterations=40000", "orthogonal_implementation=optimized", "verbose=false"],
+      "requires": "/home/pmatlia/qiskit-fleet/runs/advection-train-bc86248/worktree/models/ensembles/advection_trajectory_v2/model_7/timing.json",
+      "log": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/offline_member_6.log"
+    },
+    {
+      "id": "offline-voltage-7",
+      "host": "chroma",
+      "gpu": 1,
+      "experiment": "offline_voltage",
+      "member": 7,
+      "label": "primary",
+      "workdir": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source",
+      "config": "default_offline_voltage",
+      "overrides": ["ensemble_size=8", "ensemble_name=offline_voltage_trajectory_v2", "ensemble_member=7", "seed=20260801", "iterations=40000", "orthogonal_implementation=optimized", "verbose=false"],
+      "requires": "/home/pmatlia/qiskit-fleet/runs/advection-train-bc86248/worktree/models/ensembles/advection_trajectory_v2/model_5/timing.json",
+      "log": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/offline_member_7.log"
+    },
+    {
+      "id": "online-voltage-0",
+      "host": "helix",
+      "gpu": 0,
+      "experiment": "online_voltage",
+      "member": 0,
+      "label": "primary",
+      "workdir": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source",
+      "config": "default_online_voltage",
+      "overrides": ["ensemble_size=4", "ensemble_name=online_voltage_trajectory_v2", "ensemble_member=0", "seed=20260801", "iterations=15000", "orthogonal_implementation=optimized", "verbose=false"],
+      "requires": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source/models/ensembles/offline_voltage_trajectory_v2/model_1/timing.json",
+      "log": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/online_member_0.log"
+    },
+    {
+      "id": "online-voltage-1",
+      "host": "helix",
+      "gpu": 1,
+      "experiment": "online_voltage",
+      "member": 1,
+      "label": "primary",
+      "workdir": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source",
+      "config": "default_online_voltage",
+      "overrides": ["ensemble_size=4", "ensemble_name=online_voltage_trajectory_v2", "ensemble_member=1", "seed=20260801", "iterations=15000", "orthogonal_implementation=optimized", "verbose=false"],
+      "requires": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source/models/ensembles/offline_voltage_trajectory_v2/model_2/timing.json",
+      "log": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/online_member_1.log"
+    },
+    {
+      "id": "online-voltage-2",
+      "host": "vector",
+      "gpu": 1,
+      "experiment": "online_voltage",
+      "member": 2,
+      "label": "primary",
+      "workdir": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source",
+      "config": "default_online_voltage",
+      "overrides": ["ensemble_size=4", "ensemble_name=online_voltage_trajectory_v2", "ensemble_member=2", "seed=20260801", "iterations=15000", "orthogonal_implementation=optimized", "verbose=false"],
+      "requires": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source/models/ensembles/offline_voltage_trajectory_v2/model_3/timing.json",
+      "log": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/online_member_2.log"
+    },
+    {
+      "id": "online-voltage-3",
+      "host": "vector",
+      "gpu": 2,
+      "experiment": "online_voltage",
+      "member": 3,
+      "label": "primary",
+      "workdir": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source",
+      "config": "default_online_voltage",
+      "overrides": ["ensemble_size=4", "ensemble_name=online_voltage_trajectory_v2", "ensemble_member=3", "seed=20260801", "iterations=15000", "orthogonal_implementation=optimized", "verbose=false"],
+      "requires": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/source/models/ensembles/offline_voltage_trajectory_v2/model_4/timing.json",
+      "log": "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82/online_member_3.log"
+    }
+  ]
+}

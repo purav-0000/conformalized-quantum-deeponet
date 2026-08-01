@@ -21,6 +21,7 @@ REMOTE_PYTHON = "/home/pmatlia/qiskit-fleet/micromamba/envs/qiskit/bin/python"
 ADV = "/home/pmatlia/qiskit-fleet/runs/advection-train-bc86248"
 ADV_HELIX = "/home/pmatlia/qiskit-fleet/runs/advection-fef5c1e-bc86248"
 VOLT = "/home/pmatlia/qiskit-fleet/runs/voltage-00f5d82"
+DEFERRED_FILE = os.path.join(os.path.dirname(__file__), "tools", "fleet", "deferred_jobs.json")
 
 
 def _job(host, gpu, experiment, member, ensemble, log, completion, label="primary"):
@@ -61,6 +62,24 @@ for member, host, gpu in ((0,"helix",0),(1,"helix",1),(2,"vector",1),(3,"vector"
         f"{VOLT}/online_member_{member}.log",
         f"{VOLT}/source/models/ensembles/online_voltage_trajectory_v2/model_{member}/timing.json"))
 
+
+def _deferred_keys() -> set[tuple[str, str, int, str]]:
+    if not os.path.isfile(DEFERRED_FILE):
+        return set()
+    with open(DEFERRED_FILE, "r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    return {
+        (job["host"], job["experiment"], job["member"], job.get("label", "primary"))
+        for job in manifest["jobs"]
+    }
+
+
+DEFERRED_KEYS = _deferred_keys()
+for job in JOBS:
+    job["deferred"] = (
+        job["host"], job["experiment"], job["member"], job["label"]
+    ) in DEFERRED_KEYS
+
 REMOTE_CODE = r'''
 import json, os, re, subprocess, sys
 jobs=json.loads(sys.argv[2])
@@ -78,6 +97,7 @@ for job in jobs:
     elif running: state="running"
     elif "Traceback (most recent call last)" in text or "did not complete successfully" in text: state="failed"
     elif queued: state="queued"
+    elif job.get("deferred"): state="deferred"
     elif text: state="stopped"
     else: state="queued"
     job.update(state=state, step=int(steps[-1]) if steps else None)
@@ -108,7 +128,7 @@ def query() -> tuple[list[dict], list[str]]:
         for future in as_completed(futures):
             try: rows.extend(future.result())
             except Exception as exc: errors.append(f"{futures[future]}: {exc}")
-    order = {"running":0,"queued":1,"stopped":2,"failed":3,"completed":4}
+    order = {"running":0,"queued":1,"deferred":2,"stopped":3,"failed":4,"completed":5}
     rows.sort(key=lambda r: (order.get(r["state"], 9), r["experiment"], r["member"], r["label"]))
     return rows, errors
 
