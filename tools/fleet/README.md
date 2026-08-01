@@ -48,3 +48,8 @@ do not assume that two-process placement is safe for larger models.
 completion marker before starting a member from another experiment.
 `chain_training_member.sh` provides the shorter same-ensemble form. Both retain
 the process ID across the handoff so another follow-up can watch the chain.
+
+From the repository root, `python monitor.py` prints the current running,
+queued, stopped, failed, and completed jobs. Use `python monitor.py --watch 30`
+for a refreshing display or `python monitor.py --json` for machine-readable
+status. The monitor is read-only and is not required for queued chains to run.
