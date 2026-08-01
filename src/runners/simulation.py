@@ -653,7 +653,6 @@ class SimulationRunner:
         device = torch.device(
             f"cuda:{self.config.target_gpu}" if torch.cuda.is_available() else "cpu"
         )
-        net = net.to(device)
 
         # Load weights into the network
         for i, weights in enumerate(all_weights):
@@ -663,6 +662,7 @@ class SimulationRunner:
         # Again, layer index does not matter
         net.output_layer.weight.data = torch.from_numpy(all_weights[-1][f"{prefix}_output_weight"]).float()
         net.output_layer.bias.data = torch.from_numpy(all_weights[-1][f"{prefix}_output_bias"]).float()
+        net = net.to(device)
 
         # Perform forward pass
         with torch.no_grad():
