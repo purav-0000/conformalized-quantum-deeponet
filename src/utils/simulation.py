@@ -183,7 +183,7 @@ def build_circuit_template(
         W_gate,
         loader_gate,
         loader_inv_gate,
-        simulator: Backend,
+        simulator,
         noisy: bool = False,
 ) -> CircuitTemplate:
     """Transpile a parameterized layer circuit exactly once."""
