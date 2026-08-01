@@ -656,6 +656,14 @@ class SimulationRunner:
 
         # Load weights into the network
         for i, weights in enumerate(all_weights):
+            expected = net.hidden_layers[i].thetas.numel()
+            actual = np.asarray(weights[f"{prefix}_hidden_thetas"]).size
+            if actual != expected:
+                raise ValueError(
+                    f"{prefix} layer {i} expects {expected} rotation parameters for "
+                    f"the current input dimensions, but the checkpoint contains {actual}. "
+                    "The processed dataset and checkpoint are incompatible."
+                )
             net.hidden_layers[i].thetas.data = torch.from_numpy(weights[f"{prefix}_hidden_thetas"]).float()
             net.hidden_layers[i].bias.data = torch.from_numpy(weights[f"{prefix}_hidden_bias"]).float()
 

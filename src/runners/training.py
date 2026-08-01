@@ -1,6 +1,7 @@
 import argparse
 from dataclasses import dataclass, asdict, field
 from enum import Enum
+import hashlib
 import inspect
 import json
 import logging
@@ -145,6 +146,7 @@ class TrainingRunner:
             torch.backends.cuda.matmul.allow_tf32 = config.allow_tf32
             torch.backends.cudnn.allow_tf32 = config.allow_tf32
         self.data_handler = self._setup_data_handler()
+        self.data_manifest = self._build_data_manifest()
         self.base_output_dir = self._setup_output_directory()
         self.network_map = _get_network_map()
 
@@ -177,6 +179,24 @@ class TrainingRunner:
         output_dir.mkdir(parents=True, exist_ok=True)
         logging.info(f"Base output directory set to: {output_dir}")
         return output_dir
+
+    def _build_data_manifest(self) -> Dict:
+        """Fingerprint the exact processed splits used by this training run."""
+        manifest = {"data_dir": self.config.data_dir, "splits": {}}
+        for split, dataset in self.data_handler.datasets.items():
+            source = self.data_handler.data_path / f"{split}.npz"
+            digest = hashlib.sha256()
+            with source.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            manifest["splits"][split] = {
+                "source": source.as_posix(),
+                "sha256": digest.hexdigest(),
+                "branch_shape": list(dataset["X"][0].shape),
+                "trunk_shape": list(dataset["X"][1].shape),
+                "target_shape": list(dataset["y"].shape),
+            }
+        return manifest
 
     def _run_single_model(self):
         """Trains a single model instance."""
@@ -344,6 +364,8 @@ class TrainingRunner:
         with (model_dir / "config_used.json").open("w") as f:
             # Use dataclasses.asdict for clean serialization
             json.dump(asdict(self.config), f, indent=4, default=str)
+        with (model_dir / "data_manifest.json").open("w") as handle:
+            json.dump(self.data_manifest, handle, indent=2)
         logging.info(f"Model and artifacts saved to {model_dir}")
 
 
