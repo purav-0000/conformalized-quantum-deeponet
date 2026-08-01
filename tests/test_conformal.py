@@ -7,6 +7,7 @@ from src.utils.conformal import (
     conformal_metrics,
     finite_sample_quantile,
     grouped_conformal_quantile,
+    repeated_trajectory_resplits,
 )
 
 
@@ -37,6 +38,29 @@ class ConformalTests(unittest.TestCase):
         )
         self.assertEqual(metrics["marginal_coverage"], 0.75)
         self.assertEqual(metrics["simultaneous_trajectory_coverage"], 0.5)
+
+    def test_repeated_resplits_keep_whole_trajectories(self):
+        calibration_truth = np.arange(12.0).reshape(3, 4)
+        test_truth = np.arange(12.0, 24.0).reshape(3, 4)
+        truth = np.concatenate((calibration_truth, test_truth))
+        predictions = np.stack((truth - 1.0, truth + 1.0))
+        summary = repeated_trajectory_resplits(
+            calibration_truth,
+            predictions[:, :3],
+            test_truth,
+            predictions[:, 3:],
+            0.5,
+            trials=5,
+            seed=17,
+            epsilon=1.0,
+        )
+        self.assertEqual(summary["trials"], 5)
+        self.assertEqual(summary["num_calibration_trajectories"], 3)
+        self.assertEqual(summary["num_test_trajectories"], 3)
+        self.assertEqual(
+            summary["metrics"]["simultaneous_trajectory_coverage"]["mean"],
+            1.0,
+        )
 
 
 if __name__ == "__main__":

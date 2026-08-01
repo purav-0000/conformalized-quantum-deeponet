@@ -47,6 +47,7 @@ from src.utils.conformal import (
     adaptive_nonconformity,
     conformal_metrics,
     grouped_conformal_quantile,
+    repeated_trajectory_resplits,
 )
 from src.utils.data_handling import DataHandler
 from src.utils.simulation import (build_circuit, evaluate_model, load_weights,
@@ -84,6 +85,8 @@ class Config:
     coverage: float = 0.9
     calibration_unit: str = "trajectory"
     conformal_epsilon: float = 1e-8
+    resplit_trials: int = 0
+    resplit_seed: int = 20260801
     spqc: bool = False
     target_gpu: int = 0
     residual: bool = False
@@ -319,6 +322,19 @@ class SimulationRunner:
             "num_calibration_scores": int(legacy_scores.size),
             **legacy_metrics,
         }
+        if self.config.resplit_trials > 0:
+            n_calibration = self.data_handler.datasets['calibration']['y'].shape[0]
+            n_test = self.data_handler.datasets['test']['y'].shape[0]
+            metrics["trajectory_resplit_variability"] = repeated_trajectory_resplits(
+                y_cal.reshape(n_calibration, -1),
+                cal_outputs.reshape(cal_outputs.shape[0], n_calibration, -1),
+                y_test.reshape(n_test, -1),
+                test_outputs.reshape(test_outputs.shape[0], n_test, -1),
+                self.config.coverage,
+                trials=self.config.resplit_trials,
+                seed=self.config.resplit_seed,
+                epsilon=self.config.conformal_epsilon,
+            )
         metrics_path = self.output_dir / "conformal_metrics.json"
         with metrics_path.open("w", encoding="utf-8") as handle:
             json.dump(metrics, handle, indent=2)
