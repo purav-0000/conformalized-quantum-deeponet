@@ -156,7 +156,7 @@ def main() -> int:
         rows, errors=query()
         if args.as_json: print(json.dumps({"jobs":rows,"host_errors":errors}, indent=2))
         else: render(rows, errors)
-        if not args.watch or (rows and all(r["state"] in {"completed","failed"} for r in rows)): return 0
+        if not args.watch or (rows and all(r["state"] in {"completed","failed","deferred"} for r in rows)): return 0
         time.sleep(max(5.0,args.watch))
 
 
