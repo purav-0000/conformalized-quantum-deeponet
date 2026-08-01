@@ -4,9 +4,16 @@ num_nodes: 7
 num_data_per_client: 407
 
 # Sliding Window Parameters
-memory_window_size: 5
+memory_window_size: 10
 prediction_horizon: 1   # Fixed at 1 for predicting the next time step (t+1)
 time_domain_limits: [1.0, 3.0]
+
+# Compact quantum-simulation split. Every leading-axis entry remains one real
+# source trajectory so conformal calibration can group dependent time windows.
+qsim_train_signals: 100
+qsim_calibration_signals: 100
+qsim_test_signals: 100
+qsim_windows_per_signal: 60
 
 # Splitting Ratios
 train: 0.8
