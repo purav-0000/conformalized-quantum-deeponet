@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import random
 import secrets
+import time
 from typing import Optional, Tuple, List, Dict, Type
 
 import deepxde as dde
@@ -53,6 +54,7 @@ class Config:
     ensemble_name: Optional[str] = None
     ensemble_member: Optional[int] = None
     model_type: ModelType = ModelType.ORTHO_ONET
+    orthogonal_implementation: str = "optimized"
 
     # Training hyperparameters
     iterations: int = 30_000
@@ -86,6 +88,8 @@ class Config:
                 raise ValueError("ensemble_member requires ensemble_size > 0")
             if not 0 <= self.ensemble_member < self.ensemble_size:
                 raise ValueError("ensemble_member must be in [0, ensemble_size)")
+        if self.orthogonal_implementation not in {"optimized", "legacy"}:
+            raise ValueError("orthogonal_implementation must be 'optimized' or 'legacy'")
 
 
 def load_config(path: str) -> Config:
@@ -129,6 +133,13 @@ class TrainingRunner:
             config (Config): The main configuration object.
         """
         self.config = config
+        if config.orthogonal_implementation == "legacy":
+            from src.legacy.classical_orthogonal_layer import LegacyOrthoLayer
+            import src.model_definition.classical_orthogonal_NN as ortho_module
+            import src.model_definition.classical_res_ortho_deeponet as residual_module
+
+            ortho_module.OrthoLayer = LegacyOrthoLayer
+            residual_module.OrthoLayer = LegacyOrthoLayer
         torch.set_float32_matmul_precision("high" if config.allow_tf32 else "highest")
         if torch.cuda.is_available():
             torch.backends.cuda.matmul.allow_tf32 = config.allow_tf32
@@ -206,6 +217,7 @@ class TrainingRunner:
 
         callbacks = [LRLogger(display_every=self.config.display_every)] if self.config.decay_gamma else []
 
+        training_start = time.perf_counter()
         losshistory, _ = model.train(
 
             iterations=self.config.iterations,
@@ -213,6 +225,7 @@ class TrainingRunner:
             callbacks=callbacks,
             batch_size=self.config.batch_size
         )
+        training_seconds = time.perf_counter() - training_start
 
         if self.config.verbose:
             plot_model_outputs(
@@ -221,6 +234,15 @@ class TrainingRunner:
             )
 
         self._save_artifacts(model, losshistory, model_dir, seed)
+        timing = {
+            "training_seconds": training_seconds,
+            "iterations": self.config.iterations,
+            "iterations_per_second": self.config.iterations / training_seconds,
+            "orthogonal_implementation": self.config.orthogonal_implementation,
+            "device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",
+        }
+        with (model_dir / "timing.json").open("w") as handle:
+            json.dump(timing, handle, indent=2)
 
     def _bootstrap_data(self) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:
         """Applies bootstrapping to the training data if configured."""
