@@ -1,14 +1,14 @@
-### !!! INCOMPLETE !!!
-
-deepxde==1.10.1
+# Portable CPU/development environment. For the CUDA-pinned fleet environment,
+# use tools/fleet/environment.yaml.
+deepxde==1.15.0
 numpy
-torch
+scipy
+torch==2.11.0
 scikit-learn
 matplotlib
 cvxopt
 joblib
-qiskit==0.45.0
-qiskit-aer==0.13.0
-qiskit-aer-gpu==0.11.2
-qiskit-ibm-runtime==0.20.0
-qiskit_ibm_provider==0.8.0
+PyYAML
+tqdm
+qiskit==2.5.0
+qiskit-aer==0.17.2
