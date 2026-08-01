@@ -42,9 +42,11 @@ from src.model_definition.classical_res_ortho_deeponet import ResOrthoNN
 from src.model_definition.quantum_layer_ideal import W, data_loader
 from src.model_definition.spqc import create_spqc_circuit
 from src.utils.common import apply_overrides
+from src.utils.conformal import grouped_conformal_quantile
 from src.utils.data_handling import DataHandler
 from src.utils.simulation import (build_circuit, evaluate_model, load_weights,
-                                  plot_pred, silu)
+                                  plot_pred, silu, build_circuit_template,
+                                  bind_circuit_batch)
 
 # No qiskit verbose prints
 logging.getLogger('qiskit').setLevel(logging.WARNING)
@@ -75,12 +77,16 @@ class Config:
     # Simulation parameters
     batch_size: int = None
     coverage: float = 0.9
+    calibration_unit: str = "trajectory"
+    conformal_epsilon: float = 1e-8
     spqc: bool = False
     target_gpu: int = 0
     residual: bool = False
     online: bool = False
     n_jobs: int = 4
     simulator: str = "CPU"  # or "GPU"
+    execution_backend: str = "qiskit"  # "qiskit" or exact classical equivalent
+    reuse_transpilation: bool = True
 
     # Quantum circuit parameters
     mode: str = "ideal"     # or "shots"
@@ -260,9 +266,13 @@ class SimulationRunner:
                        tqdm(model_dirs, desc="Running Calibration")]
         cal_outputs = np.array(cal_outputs)
 
-        # Calculate quantile for conformal prediction
-        scores = np.abs(y_cal - cal_outputs.mean(axis=0)) / cal_outputs.std(axis=0)
-        q_hat = np.quantile(scores, self.config.coverage)
+        num_units = self.data_handler.datasets['calibration']['y'].shape[0]
+        q_hat, scores = grouped_conformal_quantile(
+            y_cal, cal_outputs, self.config.coverage,
+            num_units=num_units,
+            unit=self.config.calibration_unit,
+            epsilon=self.config.conformal_epsilon,
+        )
         logging.info(f"Conformal quantile q_hat at {self.config.coverage * 100:.1f}% coverage: {q_hat:.4f}")
 
         # Run test set
@@ -278,7 +288,8 @@ class SimulationRunner:
         # data_handler used directly to avoid reshaping for online datasets in _get_dataset
         plot_pred(
             self.data_handler.datasets['test']['X'], self.data_handler.datasets['test']['y'], test_outputs,
-            self.output_dir, self.data_handler.datasets['test']['X0_plot'], q_hat=q_hat, online=self.config.online
+            self.output_dir, self.data_handler.datasets['test']['X0_plot'], q_hat=q_hat,
+            online=self.config.online, interval_epsilon=self.config.conformal_epsilon
         )
 
     def _get_layer_params(self, prefix: str, inputs: Tuple[np.ndarray, np.ndarray] | Tuple[np.ndarray, None] |
@@ -329,18 +340,24 @@ class SimulationRunner:
 
         branch_outputs, trunk_outputs = inputs
 
-        # Run classical layer if specified
-        if self.config.classical_branch:
+        exact_backend = self.config.execution_backend == "exact"
+        if self.config.execution_backend not in {"qiskit", "exact"}:
+            raise ValueError("execution_backend must be 'qiskit' or 'exact'")
+        all_weights = [load_weights(model_path, layer=i) for i in range(num_layers)]
+
+        # Run an entire subnetwork exactly when it is classical or when ideal
+        # quantum evolution is replaced by its mathematically equivalent map.
+        if self.config.classical_branch or exact_backend:
             branch_outputs = self._run_classical_layer(
                 inputs=inputs[0],
-                all_weights=[load_weights(model_path, layer=i) for i in range(num_layers)],
+                all_weights=all_weights,
                 is_trunk=False
             )
 
-        if self.config.classical_trunk:
+        if self.config.classical_trunk or exact_backend:
             trunk_outputs = self._run_classical_layer(
                 inputs=inputs[1],
-                all_weights=[load_weights(model_path, layer=i) for i in range(num_layers)],
+                all_weights=all_weights,
                 is_trunk=True
             )
 
@@ -348,10 +365,10 @@ class SimulationRunner:
         for i in range(num_layers):
             is_last_layer = (i == num_layers - 1)
             is_residual_layer = (i > 0 and self.config.residual)
-            weights = load_weights(model_path, layer=i)
+            weights = all_weights[i]
 
             branch_inputs_current_layer = branch_outputs
-            if not self.config.classical_branch:
+            if not self.config.classical_branch and not exact_backend:
                 branch_params = self._get_layer_params(BRANCH_PREFIX, (branch_inputs_current_layer, None), weights)
                 branch_outputs = self._run_quantum_layer(
                     *branch_params,
@@ -361,7 +378,7 @@ class SimulationRunner:
                 )
 
             trunk_inputs_current_layer = trunk_outputs
-            if not self.config.classical_trunk:
+            if not self.config.classical_trunk and not exact_backend:
                 trunk_params = self._get_layer_params(TRUNK_PREFIX, (None, trunk_inputs_current_layer), weights)
                 trunk_outputs = self._run_quantum_layer(
                     *trunk_params,
@@ -376,7 +393,7 @@ class SimulationRunner:
             exit(0)
 
         # Final dot product and bias
-        final_bias = load_weights(model_path, layer=num_layers - 1)["final_bias"]
+        final_bias = all_weights[-1]["final_bias"]
 
         # Online dataset is not Cartesian
         subscripts = 'bi,ni->bn' if not self.config.online else 'bi,bi->b'
@@ -410,6 +427,12 @@ class SimulationRunner:
         all_outputs = []
         batch_size = self.config.batch_size or len(inputs)
         is_noisy = self.config.noise > 0.0
+        template = None
+        if self.config.reuse_transpilation:
+            template = build_circuit_template(
+                n_in, n_out, W_gate, loader_gate, loader_inv_gate,
+                self.simulator, noisy=is_noisy,
+            )
 
         if self.config.analyze_circuit_cost:
             logging.info("Branch: " if not is_trunk else "Trunk: ")
@@ -428,12 +451,17 @@ class SimulationRunner:
             # Optional: GPU Temperature Management
             # self._wait_for_gpu_cooldown()
 
-            # Build circuits in parallel
-            circuits = Parallel(n_jobs=self.config.n_jobs)(
-                delayed(build_circuit)(x, n_in, n_out, W_gate, loader_gate, loader_inv_gate, self.simulator,
-                                       noisy=is_noisy)
-                for x in batch_inputs
-            )
+            if template is not None:
+                circuits = bind_circuit_batch(template, batch_inputs)
+            else:
+                # Preserved legacy path for performance/equivalence studies.
+                circuits = Parallel(n_jobs=self.config.n_jobs)(
+                    delayed(build_circuit)(
+                        x, n_in, n_out, W_gate, loader_gate, loader_inv_gate,
+                        self.simulator, noisy=is_noisy,
+                    )
+                    for x in batch_inputs
+                )
 
             # SET SHOTS TO ACTUAL SHOTS FOR REALISTIC SIMULATION
             results = self.simulator.run(circuits, shots=1, target_gpus=[self.config.target_gpu]).result()
@@ -576,6 +604,10 @@ class SimulationRunner:
             net = ResOrthoNN(layer_dims, activation='silu')
         else:
             net = OrthoNN(layer_dims, activation='silu')
+        device = torch.device(
+            f"cuda:{self.config.target_gpu}" if torch.cuda.is_available() else "cpu"
+        )
+        net = net.to(device)
 
         # Load weights into the network
         for i, weights in enumerate(all_weights):
@@ -588,7 +620,7 @@ class SimulationRunner:
 
         # Perform forward pass
         with torch.no_grad():
-            output = net(torch.from_numpy(inputs).float()).cpu().numpy()
+            output = net(torch.from_numpy(inputs).float().to(device)).cpu().numpy()
 
         return silu(output) if is_trunk else output
 
@@ -747,8 +779,12 @@ class SimulationRunner:
         x_cal, y_cal = self._get_dataset('calibration')
         cal_outputs = execute_spqc(inputs=x_cal, num_layers=num_layers)
 
-        scores = np.abs(y_cal - cal_outputs.mean(axis=0)) / cal_outputs.std(axis=0)
-        q_hat = np.quantile(scores, self.config.coverage)
+        q_hat, scores = grouped_conformal_quantile(
+            y_cal, cal_outputs, self.config.coverage,
+            num_units=self.data_handler.datasets['calibration']['y'].shape[0],
+            unit=self.config.calibration_unit,
+            epsilon=self.config.conformal_epsilon,
+        )
         logging.info(f"Conformal quantile q_hat at {self.config.coverage * 100}% coverage: {q_hat:.4f}")
 
         # Run test set
@@ -763,7 +799,8 @@ class SimulationRunner:
         # Plot and save
         plot_pred(
             self.data_handler.datasets['test']['X'], self.data_handler.datasets['test']['y'], test_outputs,
-            self.output_dir, self.data_handler.datasets['test']['X0_plot'], q_hat=q_hat, online=False   # No online
+            self.output_dir, self.data_handler.datasets['test']['X0_plot'], q_hat=q_hat,
+            online=False, interval_epsilon=self.config.conformal_epsilon
         )
 
     def _run_spqc_quantum_layer(self, inputs, n_in, n_out, ensemble_params, last_layer, is_trunk):
@@ -774,7 +811,7 @@ class SimulationRunner:
         loader_inv_gate = loader_gate.inverse()
 
         all_outputs = []
-        batch_size = self.config.batch_size or len(inputs[0])
+        batch_size = self.config.batch_size or inputs.shape[1]
 
         if self.config.analyze_circuit_cost:
             logging.info("---Branch--- " if not is_trunk else "---Trunk--- ")
@@ -787,7 +824,7 @@ class SimulationRunner:
 
         desc = "Running trunk layer" if is_trunk else "Running branch layer"
 
-        for i in tqdm(range(0, len(inputs), batch_size), desc=desc):
+        for i in tqdm(range(0, inputs.shape[1], batch_size), desc=desc):
             batch = inputs[:, i:i + batch_size]
             # Optional: GPU Temperature Management
             # self._wait_for_gpu_cooldown()

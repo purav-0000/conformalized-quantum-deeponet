@@ -1,6 +1,7 @@
 import numpy as np
 import qiskit.circuit
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
+from qiskit.circuit import ParameterVector
 
 def RBS(theta): # RBS gate with parameter t
     rbs_q = QuantumRegister(2)
@@ -67,6 +68,40 @@ def data_loader(data_array):
         qc.compose(RBS(params[i]), qubits=[i, i + 1], inplace=True)
 
     return qc.to_gate(label="DataLoader")
+
+
+def data_loader_angles(data_arrays):
+    """Vectorized unary-loader angles for one vector or a batch of vectors."""
+    values = np.asarray(data_arrays, dtype=np.float64)
+    was_vector = values.ndim == 1
+    if was_vector:
+        values = values[None, :]
+    if values.ndim != 2 or values.shape[1] < 2:
+        raise ValueError("data_arrays must have shape (batch, features >= 2)")
+
+    norms = np.linalg.norm(values, axis=1, keepdims=True)
+    if np.any(norms == 0):
+        raise ValueError("cannot unary-encode an all-zero vector")
+    normalized = values / norms
+    params = np.empty((len(normalized), normalized.shape[1] - 1), dtype=np.float64)
+    sin_product = np.ones(len(normalized), dtype=np.float64)
+    for i in range(params.shape[1]):
+        params[:, i] = np.arccos(np.clip(normalized[:, i] * sin_product, -1.0, 1.0))
+        sin_value = np.sin(params[:, i])
+        sin_product /= np.where(np.abs(sin_value) > 1e-9, sin_value, 1e-9)
+    params[normalized[:, -1] < 0, -1] *= -1
+    return params[0] if was_vector else params
+
+
+def parameterized_data_loader(num_features, prefix="x"):
+    """Return one reusable unary-loader gate and its bindable parameters."""
+    if num_features < 2:
+        raise ValueError("num_features must be at least 2")
+    parameters = ParameterVector(prefix, num_features - 1)
+    circuit = QuantumCircuit(num_features, name="DataLoader")
+    for i, theta in enumerate(parameters):
+        circuit.compose(RBS(theta), qubits=[i, i + 1], inplace=True)
+    return circuit.to_gate(label="DataLoader"), tuple(parameters)
 
 
 def find_nparams(n,d): # size_in, size_out
@@ -154,6 +189,28 @@ def custom_tomo_fast(n_in, n_out, data_array, W_gate, loader_special_gate, loade
     tomo_circuit.h(anc_qr)
 
     return tomo_circuit
+
+
+def custom_tomo_template(n_in, n_out, loader_data_gate, W_gate,
+                         loader_special_gate, loader_inv_gate):
+    """Build the static circuit topology used by all inputs in a layer."""
+    num_qubits = max(n_in, n_out)
+    anc_qr = QuantumRegister(1, "anc")
+    tomo_qr = QuantumRegister(num_qubits, "tomo")
+    circuit = QuantumCircuit(anc_qr, tomo_qr)
+    input_qubits = list(range(num_qubits - n_in + 1, num_qubits + 1))
+    tomo_qubits = list(range(1, num_qubits + 1))
+
+    circuit.h(anc_qr)
+    circuit.cx(anc_qr, tomo_qr[num_qubits - n_in])
+    circuit.append(loader_data_gate, input_qubits)
+    circuit.append(W_gate, tomo_qr)
+    circuit.append(loader_inv_gate, tomo_qubits)
+    circuit.x(anc_qr)
+    circuit.cx(anc_qr, tomo_qr[0])
+    circuit.append(loader_special_gate, tomo_qubits)
+    circuit.h(anc_qr)
+    return circuit
 
 
 def tomo_output_fast(n_in, n_out, data_array, simulator,

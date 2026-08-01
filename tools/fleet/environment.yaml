@@ -1,0 +1,23 @@
+name: qiskit
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - numpy
+  - scipy
+  - matplotlib
+  - pyyaml
+  - scikit-learn
+  - joblib
+  - tqdm
+  - cvxopt
+  - psutil
+  - pytest
+  - pip:
+      # CUDA 12.8 is the newest runtime supported by the fleet's 570 drivers.
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - torch==2.11.0+cu128
+      - qiskit==2.5.0
+      - qiskit-aer==0.17.2
+      - deepxde==1.15.0

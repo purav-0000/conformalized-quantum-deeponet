@@ -9,6 +9,10 @@ ensemble: null
 # Simulation parameters
 batch_size: null
 coverage: 0.9
+calibration_unit: trajectory
+conformal_epsilon: 1.0e-8
+execution_backend: qiskit
+reuse_transpilation: true
 spqc: false
 target_gpu: 0
 residual: false

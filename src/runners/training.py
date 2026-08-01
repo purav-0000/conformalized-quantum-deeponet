@@ -51,6 +51,7 @@ class Config:
     model_name: Optional[str] = None
     ensemble_size: int = 0
     ensemble_name: Optional[str] = None
+    ensemble_member: Optional[int] = None
     model_type: ModelType = ModelType.ORTHO_ONET
 
     # Training hyperparameters
@@ -70,6 +71,7 @@ class Config:
     seed: int = field(default_factory=lambda: secrets.randbits(32))
     verbose: bool = False
     display_every: int = 1_000
+    allow_tf32: bool = True
 
     def __post_init__(self):
         """Ensure string values from YAML/overrides are converted to Enum."""
@@ -78,6 +80,12 @@ class Config:
 
         if isinstance(self.loss, str):
             self.loss = LossFunc(self.loss)
+
+        if self.ensemble_member is not None:
+            if self.ensemble_size <= 0:
+                raise ValueError("ensemble_member requires ensemble_size > 0")
+            if not 0 <= self.ensemble_member < self.ensemble_size:
+                raise ValueError("ensemble_member must be in [0, ensemble_size)")
 
 
 def load_config(path: str) -> Config:
@@ -121,6 +129,10 @@ class TrainingRunner:
             config (Config): The main configuration object.
         """
         self.config = config
+        torch.set_float32_matmul_precision("high" if config.allow_tf32 else "highest")
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = config.allow_tf32
+            torch.backends.cudnn.allow_tf32 = config.allow_tf32
         self.data_handler = self._setup_data_handler()
         self.base_output_dir = self._setup_output_directory()
         self.network_map = _get_network_map()
@@ -161,11 +173,17 @@ class TrainingRunner:
         self._train_one_instance(self.base_output_dir, self.config.seed)
 
     def _run_ensemble(self):
-        """Trains an ensemble of models, each with a different seed."""
+        """Train all members serially, or one member for fleet parallelism."""
         base_seed = self.config.seed
-        for i in range(self.config.ensemble_size):
-            # Use the base seed for the first model, then random seeds for the rest
-            seed_i = base_seed if i == 0 else secrets.randbits(32)
+        indices = (
+            [self.config.ensemble_member]
+            if self.config.ensemble_member is not None
+            else range(self.config.ensemble_size)
+        )
+        for i in indices:
+            seed_i = base_seed if i == 0 else int(
+                np.random.SeedSequence([base_seed, i]).generate_state(1, dtype=np.uint32)[0]
+            )
             model_dir = self.base_output_dir / f"model_{i}"
             logging.info(f"--- Training ensemble model {i + 1}/{self.config.ensemble_size} (seed={seed_i}) ---")
             self._train_one_instance(model_dir, seed_i)

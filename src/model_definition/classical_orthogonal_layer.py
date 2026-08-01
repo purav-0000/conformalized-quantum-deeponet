@@ -1,5 +1,5 @@
-import torch
 import numpy as np
+import torch
 
 
 class OrthoLayer(torch.nn.Module):
@@ -30,57 +30,41 @@ class OrthoLayer(torch.nn.Module):
         ])
         self.x_slice_sizes = self.x_end_index - self.x_start_index
 
-        # Precompute sparse indices for each slice
-        self.precomputed_indices = []
-        for slice_size in self.x_slice_sizes:
-            n = slice_size // 2
-            if n == 0:
-                self.precomputed_indices.append(None)
-                continue
-            row_idx = torch.cat([torch.tensor([2 * i, 2 * i, 2 * i + 1, 2 * i + 1]) for i in range(n)])
-            col_idx = torch.cat([torch.tensor([2 * i, 2 * i + 1]).repeat(2) for i in range(n)])
-            self.precomputed_indices.append(torch.stack([row_idx, col_idx]))
+        # Store the immutable Givens schedule as Python integers.  The old
+        # implementation constructed a sparse COO matrix and transferred its
+        # indices to the device for every stage of every forward pass.  Each
+        # stage consists only of independent adjacent 2x2 rotations, so direct
+        # pairwise tensor arithmetic is exactly equivalent and much cheaper.
+        self.stages = tuple(
+            (int(start), int(end), int(size // 2))
+            for start, end, size in zip(
+                self.x_start_index, self.x_end_index, self.x_slice_sizes
+            )
+            if size // 2
+        )
 
     def hidden_layer(self, x, in_features, out_features):
         # Determine the order of operations based on layer dimensions
         if in_features < out_features:
-            x_end_index = self.x_end_index[::-1]
-            x_start_index = self.x_start_index[::-1]
-            x_slice_sizes = self.x_slice_sizes[::-1]
-            precomputed_indices = self.precomputed_indices[::-1]
+            stages = reversed(self.stages)
             x = torch.nn.functional.pad(x, (out_features - in_features, 0))
         else:
-            x_end_index = self.x_end_index
-            x_start_index = self.x_start_index
-            x_slice_sizes = self.x_slice_sizes
-            precomputed_indices = self.precomputed_indices
+            stages = iter(self.stages)
 
         theta_start = 0
-        for i, sz in enumerate(x_slice_sizes):
-            n = sz // 2
-            if n == 0:
-                continue
-
+        for start, end, n in stages:
             theta_end = theta_start + n
             theta_slice = self.thetas[theta_start:theta_end]
             theta_start = theta_end
-
-            # Slice the original x from the previous step
-            x_slice = x[:, x_start_index[i]:x_end_index[i]]
-
             cos_t = torch.cos(theta_slice)
             sin_t = torch.sin(theta_slice)
-            values = torch.stack((cos_t, sin_t, -sin_t, cos_t), dim=1).view(-1)
-
-            indices = precomputed_indices[i].to(x.device)
-
-            rotation = torch.sparse_coo_tensor(
-                indices, values, (2 * n, 2 * n)
-            )
-
-            x_new = x.clone()
-            x_new[:, x_start_index[i]:x_end_index[i]] = torch.mm(x_slice, rotation)
-            x = x_new
+            pairs = x[:, start:end].reshape(x.shape[0], n, 2)
+            left, right = pairs.unbind(dim=-1)
+            rotated = torch.stack(
+                (left * cos_t - right * sin_t, left * sin_t + right * cos_t),
+                dim=-1,
+            ).reshape(x.shape[0], 2 * n)
+            x = torch.cat((x[:, :start], rotated, x[:, end:]), dim=1)
 
         if in_features > out_features:
             x = x[:, in_features - out_features:]

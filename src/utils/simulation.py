@@ -2,16 +2,22 @@
 
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 from qiskit import QuantumCircuit, transpile
-from qiskit.providers.backend import Backend
 
-from src.model_definition.quantum_layer_ideal import custom_tomo_fast
+from src.model_definition.quantum_layer_ideal import (
+    custom_tomo_fast,
+    custom_tomo_template,
+    data_loader_angles,
+    parameterized_data_loader,
+)
 
 
 def silu(x: np.ndarray) -> np.ndarray:
@@ -27,6 +33,7 @@ def silu(x: np.ndarray) -> np.ndarray:
     return x / (1 + np.exp(-x))
 
 
+@lru_cache(maxsize=512)
 def load_weights(directory: Path, layer: int) -> Dict[str, np.ndarray]:
     """
     Loads the weights for a specific layer of the DeepONet model.
@@ -116,7 +123,7 @@ def build_circuit(
         W_gate,
         loader_gate,
         loader_inv_gate,
-        simulator: Backend,
+        simulator,
         cost_check: bool = False,
         noisy: bool = False
 ) -> Optional[QuantumCircuit]:
@@ -162,6 +169,54 @@ def build_circuit(
     return transpile(circuit, simulator, optimization_level=0)
 
 
+@dataclass(frozen=True)
+class CircuitTemplate:
+    """One transpiled circuit topology reused across every input in a layer."""
+
+    circuit: QuantumCircuit
+    parameters: tuple
+
+
+def build_circuit_template(
+        n_in: int,
+        n_out: int,
+        W_gate,
+        loader_gate,
+        loader_inv_gate,
+        simulator: Backend,
+        noisy: bool = False,
+) -> CircuitTemplate:
+    """Transpile a parameterized layer circuit exactly once."""
+    loader_data_gate, parameters = parameterized_data_loader(n_in, prefix="input")
+    circuit = custom_tomo_template(
+        n_in, n_out, loader_data_gate, W_gate, loader_gate, loader_inv_gate
+    )
+    if noisy:
+        circuit.save_density_matrix()
+    else:
+        circuit.save_statevector("state")
+    compiled = transpile(
+        circuit,
+        simulator,
+        optimization_level=1,
+        seed_transpiler=0,
+    )
+    return CircuitTemplate(compiled, parameters)
+
+
+def bind_circuit_batch(template: CircuitTemplate, inputs: np.ndarray) -> list[QuantumCircuit]:
+    """Bind a batch of inputs without rebuilding or retranspiling topology."""
+    stable = np.asarray(inputs, dtype=np.float64).copy()
+    stable[np.abs(stable) < 1e-8] = 1e-8
+    angles = data_loader_angles(stable)
+    return [
+        template.circuit.assign_parameters(
+            dict(zip(template.parameters, row)), inplace=False
+        )
+        for row in angles
+    ]
+
+
 def plot_pred(
         x_test: np.ndarray,
         y_test: np.ndarray,
@@ -170,7 +225,8 @@ def plot_pred(
         x_test_plot: np.ndarray,
         q_hat: Optional[float] = None,
         num_samples: int = 1,
-        online: bool = False
+        online: bool = False,
+        interval_epsilon: float = 0.0,
 ) -> None:
     """
     Generates and saves plots comparing model predictions to ground truth.
@@ -195,7 +251,8 @@ def plot_pred(
             output_dir,
             x_test_plot,
             q_hat,
-            num_samples
+            num_samples,
+            interval_epsilon,
         )
         return
 
@@ -242,8 +299,8 @@ def plot_pred(
 
             # Plot Conformal Prediction Interval
             if q_hat is not None:
-                lower_bound = mean_pred - q_hat * std_pred
-                upper_bound = mean_pred + q_hat * std_pred
+                lower_bound = mean_pred - q_hat * (std_pred + interval_epsilon)
+                upper_bound = mean_pred + q_hat * (std_pred + interval_epsilon)
                 ax.fill_between(x_trunk_coords, lower_bound, upper_bound, color=color_interval, alpha=0.55,
                                 label="90% Conformal Interval")
         else:
@@ -266,8 +323,8 @@ def plot_pred(
     if is_ensemble and q_hat is not None:
         mean_preds_all = y_pred.mean(axis=0)
         std_preds_all = y_pred.std(axis=0)
-        lower_all = mean_preds_all - q_hat * std_preds_all
-        upper_all = mean_preds_all + q_hat * std_preds_all
+        lower_all = mean_preds_all - q_hat * (std_preds_all + interval_epsilon)
+        upper_all = mean_preds_all + q_hat * (std_preds_all + interval_epsilon)
 
         in_interval = (y_test >= lower_all) & (y_test <= upper_all)
         coverage = np.mean(in_interval) * 100
@@ -306,7 +363,8 @@ def plot_pred_online(
     output_dir: Path,
     x_test_plot: np.ndarray,
     q_hat: Optional[float] = None,
-    num_samples: int = 10
+    num_samples: int = 10,
+    interval_epsilon: float = 0.0,
 ):
     """
     Similar to plot_pred except for online dataset.
@@ -368,8 +426,8 @@ def plot_pred_online(
 
             # Plot Conformal Prediction Interval
             if q_hat is not None:
-                lower_bound = mean_pred - q_hat * std_pred
-                upper_bound = mean_pred + q_hat * std_pred
+                lower_bound = mean_pred - q_hat * (std_pred + interval_epsilon)
+                upper_bound = mean_pred + q_hat * (std_pred + interval_epsilon)
                 ax.fill_between(x_trunk_coords, lower_bound, upper_bound, color=color_interval, alpha=0.55,
                                 label="90% Conformal Interval")
         else:
@@ -399,8 +457,8 @@ def plot_pred_online(
     if is_ensemble and q_hat is not None:
         mean_preds_all = y_pred.mean(axis=0)
         std_preds_all = y_pred.std(axis=0)
-        lower_all = mean_preds_all - q_hat * std_preds_all
-        upper_all = mean_preds_all + q_hat * std_preds_all
+        lower_all = mean_preds_all - q_hat * (std_preds_all + interval_epsilon)
+        upper_all = mean_preds_all + q_hat * (std_preds_all + interval_epsilon)
 
         in_interval = (y_test >= lower_all) & (y_test <= upper_all)
         coverage = np.mean(in_interval) * 100

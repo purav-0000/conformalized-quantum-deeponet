@@ -1,0 +1,12 @@
+seed: 20260801
+warmup: 5
+repetitions: 30
+orthogonal_cases:
+  - {in_features: 6, out_features: 5, batch_size: 256}
+  - {in_features: 11, out_features: 10, batch_size: 256}
+  - {in_features: 21, out_features: 20, batch_size: 128}
+  - {in_features: 20, out_features: 20, batch_size: 256}
+  - {in_features: 20, out_features: 20, batch_size: 2500}
+qiskit_cases:
+  - {in_features: 5, out_features: 5, batch_size: 16}
+  - {in_features: 6, out_features: 5, batch_size: 8}

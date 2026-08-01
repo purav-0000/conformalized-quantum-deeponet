@@ -1,0 +1,18 @@
+defaults:
+  root: /home/pmatlia/qiskit-fleet
+  micromamba: /home/pmatlia/.local/bin/micromamba
+  mamba_root: /home/pmatlia/qiskit-fleet/micromamba
+  environment: qiskit
+hosts:
+  apex:
+    ssh: apex
+    allowed_gpus: [1]
+  chroma:
+    ssh: chroma
+    allowed_gpus: [0, 1]
+  helix:
+    ssh: helix
+    allowed_gpus: [0, 1]
+  vector:
+    ssh: vector
+    allowed_gpus: [1, 2]

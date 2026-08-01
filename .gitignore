@@ -1,17 +1,62 @@
-*.ipynb
+# Python bytecode and tooling caches
 __pycache__/
-*.png
-classical_advection.py 
-classical_burgers.py
-results/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
-# Ignore
-data/processed_data/.backup
-models/
-scripts/
-.vs/
+# Virtual environments and local environment files
 .venv/
-src/.ipynb_checkpoints
-src/notebooks
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+src/notebooks/
+
+# Experiment outputs and local scratch work
+logs/
+models/
+results/
+wandb/
+mlruns/
+checkpoints/
+scratch/
+.local-access/
+classical_advection.py
+classical_burgers.py
+data/processed_data/.backup/
+
+# LaTeX build artifacts (keep source files and deliberate PDFs)
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.out
+*.synctex.gz
+*.toc
+
+# IDE and OS metadata
 .idea/
-.gitignore
+.vs/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
