@@ -3,7 +3,11 @@ import unittest
 
 import numpy as np
 
-from src.utils.conformal import finite_sample_quantile, grouped_conformal_quantile
+from src.utils.conformal import (
+    conformal_metrics,
+    finite_sample_quantile,
+    grouped_conformal_quantile,
+)
 
 
 class ConformalTests(unittest.TestCase):
@@ -24,6 +28,15 @@ class ConformalTests(unittest.TestCase):
         np.testing.assert_allclose(scores, [2.0, 4.0, 6.0])
         # ceil((3 + 1) * .5) = 2
         self.assertEqual(q_hat, 4.0)
+
+    def test_simultaneous_coverage_is_grouped_by_trajectory(self):
+        truth = np.array([[0.0, 0.0], [0.0, 2.0]])
+        predictions = np.stack([np.zeros_like(truth), np.zeros_like(truth)])
+        metrics = conformal_metrics(
+            truth, predictions, q_hat=1.0, num_units=2, epsilon=1.0
+        )
+        self.assertEqual(metrics["marginal_coverage"], 0.75)
+        self.assertEqual(metrics["simultaneous_trajectory_coverage"], 0.5)
 
 
 if __name__ == "__main__":

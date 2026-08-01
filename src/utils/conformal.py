@@ -59,3 +59,34 @@ def grouped_conformal_quantile(
     else:
         raise ValueError("unit must be 'trajectory' or 'coordinate'")
     return finite_sample_quantile(calibration_scores, coverage), calibration_scores
+
+
+def conformal_metrics(
+    truth: np.ndarray,
+    ensemble_predictions: np.ndarray,
+    q_hat: float,
+    *,
+    num_units: int,
+    epsilon: float = 1e-8,
+) -> dict[str, float | int]:
+    """Measure marginal and simultaneous trajectory coverage of a band."""
+    predictions = np.asarray(ensemble_predictions)
+    mean = predictions.mean(axis=0)
+    spread = predictions.std(axis=0)
+    truth = np.asarray(truth)
+    if mean.shape != truth.shape:
+        raise ValueError(f"prediction/truth shapes differ: {mean.shape} != {truth.shape}")
+    radius = q_hat * (spread + epsilon)
+    covered = np.abs(truth - mean) <= radius
+    if covered.size % num_units:
+        raise ValueError("coverage indicators cannot be grouped into trajectories")
+    trajectory_covered = covered.reshape(num_units, -1).all(axis=1)
+    width = 2.0 * radius
+    return {
+        "num_trajectories": int(num_units),
+        "num_coordinates": int(covered.size),
+        "marginal_coverage": float(covered.mean()),
+        "simultaneous_trajectory_coverage": float(trajectory_covered.mean()),
+        "average_interval_width": float(width.mean()),
+        "maximum_interval_width": float(width.max()),
+    }

@@ -16,6 +16,7 @@
 ###############################################################################
 
 import argparse
+import json
 import logging
 import os
 import random
@@ -42,7 +43,7 @@ from src.model_definition.classical_res_ortho_deeponet import ResOrthoNN
 from src.model_definition.quantum_layer_ideal import W, data_loader
 from src.model_definition.spqc import create_spqc_circuit
 from src.utils.common import apply_overrides
-from src.utils.conformal import grouped_conformal_quantile
+from src.utils.conformal import conformal_metrics, grouped_conformal_quantile
 from src.utils.data_handling import DataHandler
 from src.utils.simulation import (build_circuit, evaluate_model, load_weights,
                                   plot_pred, silu, build_circuit_template,
@@ -283,7 +284,26 @@ class SimulationRunner:
         test_outputs = np.array(test_outputs)
 
         # Evaluate and save results
-        evaluate_model(test_outputs, y_test, self.output_dir, verbose=False)
+        relative_l2_error = evaluate_model(test_outputs, y_test, self.output_dir, verbose=False)
+        metrics = conformal_metrics(
+            y_test,
+            test_outputs,
+            q_hat,
+            num_units=self.data_handler.datasets['test']['y'].shape[0],
+            epsilon=self.config.conformal_epsilon,
+        )
+        metrics.update({
+            "relative_l2_error": relative_l2_error,
+            "q_hat": q_hat,
+            "target_coverage": self.config.coverage,
+            "calibration_unit": self.config.calibration_unit,
+            "num_calibration_scores": int(scores.size),
+            "execution_backend": self.config.execution_backend,
+        })
+        metrics_path = self.output_dir / "conformal_metrics.json"
+        with metrics_path.open("w", encoding="utf-8") as handle:
+            json.dump(metrics, handle, indent=2)
+        logging.info("Trajectory-aware conformal metrics: %s", metrics)
 
         # data_handler used directly to avoid reshaping for online datasets in _get_dataset
         plot_pred(
