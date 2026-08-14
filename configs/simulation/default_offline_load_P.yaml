@@ -9,6 +9,7 @@ ensemble: null
 # Simulation parameters
 batch_size: null
 coverage: 0.9
+conformal_epsilon: 1.0e-8
 spqc: false
 target_gpu: 0
 residual: true

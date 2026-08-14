@@ -12,6 +12,7 @@ from qiskit import QuantumCircuit, transpile
 from qiskit.providers.backend import Backend
 
 from src.model_definition.quantum_layer_ideal import custom_tomo_fast
+from src.utils.conformal import DEFAULT_EPSILON, conformal_interval
 
 
 def silu(x: np.ndarray) -> np.ndarray:
@@ -170,7 +171,8 @@ def plot_pred(
         x_test_plot: np.ndarray,
         q_hat: Optional[float] = None,
         num_samples: int = 1,
-        online: bool = False
+        online: bool = False,
+        interval_epsilon: float = DEFAULT_EPSILON,
 ) -> None:
     """
     Generates and saves plots comparing model predictions to ground truth.
@@ -195,7 +197,8 @@ def plot_pred(
             output_dir,
             x_test_plot,
             q_hat,
-            num_samples
+            num_samples,
+            interval_epsilon,
         )
         return
 
@@ -235,15 +238,15 @@ def plot_pred(
         if is_ensemble:
             samples = y_pred[:, idx, :]
             mean_pred = samples.mean(axis=0)
-            std_pred = samples.std(axis=0)
 
             # Plot Mean Prediction
             ax.plot(x_trunk_coords, mean_pred, color=color_pred, linestyle='--', linewidth=2, label="Mean Prediction")
 
             # Plot Conformal Prediction Interval
             if q_hat is not None:
-                lower_bound = mean_pred - q_hat * std_pred
-                upper_bound = mean_pred + q_hat * std_pred
+                lower_bound, upper_bound = conformal_interval(
+                    samples, q_hat, interval_epsilon
+                )
                 ax.fill_between(x_trunk_coords, lower_bound, upper_bound, color=color_interval, alpha=0.55,
                                 label="90% Conformal Interval")
         else:
@@ -264,10 +267,9 @@ def plot_pred(
     metrics_text = f"Mean Relative L2 Error: {error:.4f}"
 
     if is_ensemble and q_hat is not None:
-        mean_preds_all = y_pred.mean(axis=0)
-        std_preds_all = y_pred.std(axis=0)
-        lower_all = mean_preds_all - q_hat * std_preds_all
-        upper_all = mean_preds_all + q_hat * std_preds_all
+        lower_all, upper_all = conformal_interval(
+            y_pred, q_hat, interval_epsilon
+        )
 
         in_interval = (y_test >= lower_all) & (y_test <= upper_all)
         coverage = np.mean(in_interval) * 100
@@ -306,7 +308,8 @@ def plot_pred_online(
     output_dir: Path,
     x_test_plot: np.ndarray,
     q_hat: Optional[float] = None,
-    num_samples: int = 10
+    num_samples: int = 10,
+    interval_epsilon: float = DEFAULT_EPSILON,
 ):
     """
     Similar to plot_pred except for online dataset.
@@ -361,15 +364,15 @@ def plot_pred_online(
         if is_ensemble:
             samples = y_pred[:, idx, :, 0]
             mean_pred = samples.mean(axis=0)
-            std_pred = samples.std(axis=0)
 
             # Plot Mean Prediction
             ax.plot(x_trunk_coords, mean_pred, color=color_pred, linestyle='--', linewidth=2, label="Mean Prediction")
 
             # Plot Conformal Prediction Interval
             if q_hat is not None:
-                lower_bound = mean_pred - q_hat * std_pred
-                upper_bound = mean_pred + q_hat * std_pred
+                lower_bound, upper_bound = conformal_interval(
+                    samples, q_hat, interval_epsilon
+                )
                 ax.fill_between(x_trunk_coords, lower_bound, upper_bound, color=color_interval, alpha=0.55,
                                 label="90% Conformal Interval")
         else:
@@ -397,10 +400,9 @@ def plot_pred_online(
     metrics_text = f"Mean Relative L2 Error: {error:.4f}"
 
     if is_ensemble and q_hat is not None:
-        mean_preds_all = y_pred.mean(axis=0)
-        std_preds_all = y_pred.std(axis=0)
-        lower_all = mean_preds_all - q_hat * std_preds_all
-        upper_all = mean_preds_all + q_hat * std_preds_all
+        lower_all, upper_all = conformal_interval(
+            y_pred, q_hat, interval_epsilon
+        )
 
         in_interval = (y_test >= lower_all) & (y_test <= upper_all)
         coverage = np.mean(in_interval) * 100
