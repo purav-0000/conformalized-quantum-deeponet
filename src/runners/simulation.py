@@ -261,7 +261,7 @@ class SimulationRunner:
         cal_outputs = np.array(cal_outputs)
 
         # Calculate quantile for conformal prediction
-        scores = np.abs(y_cal - cal_outputs.mean(axis=0)) / cal_outputs.std(axis=0)
+        scores = np.abs(y_cal - cal_outputs.mean(axis=0)) / (cal_outputs.std(axis=0) + 1e-8)
         q_hat = np.quantile(scores, self.config.coverage)
         logging.info(f"Conformal quantile q_hat at {self.config.coverage * 100:.1f}% coverage: {q_hat:.4f}")
 
@@ -747,7 +747,7 @@ class SimulationRunner:
         x_cal, y_cal = self._get_dataset('calibration')
         cal_outputs = execute_spqc(inputs=x_cal, num_layers=num_layers)
 
-        scores = np.abs(y_cal - cal_outputs.mean(axis=0)) / cal_outputs.std(axis=0)
+        scores = np.abs(y_cal - cal_outputs.mean(axis=0)) / (cal_outputs.std(axis=0) + 1e-8)
         q_hat = np.quantile(scores, self.config.coverage)
         logging.info(f"Conformal quantile q_hat at {self.config.coverage * 100}% coverage: {q_hat:.4f}")
 
