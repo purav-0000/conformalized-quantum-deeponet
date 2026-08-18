@@ -23,8 +23,9 @@ def transform_input(x: np.ndarray, min_val: float, max_val: float) -> np.ndarray
     epsilon = 1e-8
     d = x.shape[-1]
 
-    # Normalize to [-1, 1]
-    x_normalized = 2 * (x - min_val) / ((max_val - min_val) + epsilon) - 1
+    # Clip evaluation inputs to the training range, then normalize to [-1, 1].
+    x_clipped = np.clip(x, min_val, max_val)
+    x_normalized = 2 * (x_clipped - min_val) / ((max_val - min_val) + epsilon) - 1
 
     # Scale by sqrt(d)
     x_scaled = x_normalized / np.sqrt(d)
@@ -36,14 +37,9 @@ def transform_input(x: np.ndarray, min_val: float, max_val: float) -> np.ndarray
     return np.concatenate((x_scaled, x_d1), axis=-1).astype(np.float32)
 
 
-def _calculate_bounds(x_train, x_test, x_cal):
-    def get_min_max(idx):
-        arrays = [x_train[idx], x_test[idx], x_cal[idx]]
-        concatenated = np.concatenate(arrays, axis=0)
-        return np.min(concatenated), np.max(concatenated)
-
-    branch_min, branch_max = get_min_max(0)
-    trunk_min, trunk_max = get_min_max(1)
+def _calculate_bounds(x_train):
+    branch_min, branch_max = np.min(x_train[0]), np.max(x_train[0])
+    trunk_min, trunk_max = np.min(x_train[1]), np.max(x_train[1])
 
     return {
         "branch_min": branch_min,
@@ -192,8 +188,7 @@ class DataHandler:
     def _normalize_and_transform(self):
         """Calculates normalization bounds and applies the hypersphere transformation."""
         logging.info("Normalizing and transforming datasets...")
-        self.bounds = _calculate_bounds(self.datasets['train']['X'], self.datasets['test']['X'],
-                                        self.datasets['calibration']['X'])
+        self.bounds = _calculate_bounds(self.datasets['train']['X'])
 
         for split in self.datasets:
             branch, trunk = self.datasets[split]['X']
