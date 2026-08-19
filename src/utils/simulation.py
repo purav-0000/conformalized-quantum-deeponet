@@ -242,8 +242,8 @@ def plot_pred(
 
             # Plot Conformal Prediction Interval
             if q_hat is not None:
-                lower_bound = mean_pred - q_hat * std_pred
-                upper_bound = mean_pred + q_hat * std_pred
+                lower_bound = mean_pred - q_hat * (std_pred + 1e-8)
+                upper_bound = mean_pred + q_hat * (std_pred + 1e-8)
                 ax.fill_between(x_trunk_coords, lower_bound, upper_bound, color=color_interval, alpha=0.55,
                                 label="90% Conformal Interval")
         else:
@@ -266,8 +266,8 @@ def plot_pred(
     if is_ensemble and q_hat is not None:
         mean_preds_all = y_pred.mean(axis=0)
         std_preds_all = y_pred.std(axis=0)
-        lower_all = mean_preds_all - q_hat * std_preds_all
-        upper_all = mean_preds_all + q_hat * std_preds_all
+        lower_all = mean_preds_all - q_hat * (std_preds_all + 1e-8)
+        upper_all = mean_preds_all + q_hat * (std_preds_all + 1e-8)
 
         in_interval = (y_test >= lower_all) & (y_test <= upper_all)
         coverage = np.mean(in_interval) * 100
@@ -368,8 +368,8 @@ def plot_pred_online(
 
             # Plot Conformal Prediction Interval
             if q_hat is not None:
-                lower_bound = mean_pred - q_hat * std_pred
-                upper_bound = mean_pred + q_hat * std_pred
+                lower_bound = mean_pred - q_hat * (std_pred + 1e-8)
+                upper_bound = mean_pred + q_hat * (std_pred + 1e-8)
                 ax.fill_between(x_trunk_coords, lower_bound, upper_bound, color=color_interval, alpha=0.55,
                                 label="90% Conformal Interval")
         else:
@@ -399,8 +399,8 @@ def plot_pred_online(
     if is_ensemble and q_hat is not None:
         mean_preds_all = y_pred.mean(axis=0)
         std_preds_all = y_pred.std(axis=0)
-        lower_all = mean_preds_all - q_hat * std_preds_all
-        upper_all = mean_preds_all + q_hat * std_preds_all
+        lower_all = mean_preds_all - q_hat * (std_preds_all + 1e-8)
+        upper_all = mean_preds_all + q_hat * (std_preds_all + 1e-8)
 
         in_interval = (y_test >= lower_all) & (y_test <= upper_all)
         coverage = np.mean(in_interval) * 100
